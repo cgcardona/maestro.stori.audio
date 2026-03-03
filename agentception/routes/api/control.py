@@ -4,10 +4,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+from starlette.requests import Request
+from starlette.responses import Response
 
 from agentception.config import settings
 from agentception.models import SpawnCoordinatorRequest, SpawnCoordinatorResult, SpawnRequest, SpawnResult
@@ -23,6 +28,14 @@ from ._shared import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Jinja2 template env for the HTML response path of POST /control/spawn.
+# Kept local to this module so the API layer does not depend on the UI
+# layer's _TEMPLATES singleton.  Both instances point at the same directory;
+# Jinja2 environments are stateless w.r.t. file rendering.
+_CTRL_TEMPLATES = Jinja2Templates(
+    directory=str(Path(__file__).parent.parent.parent / "templates")
+)
 
 router = APIRouter()
 
@@ -111,29 +124,24 @@ async def unpin_active_label() -> ActiveLabelStatus:
     return ActiveLabelStatus(label=resolved, pinned=False, pin=None)
 
 
-@router.post("/control/spawn")
-async def spawn_agent(body: SpawnRequest) -> SpawnResult:
-    """Manually seed a new engineer agent for an open, unclaimed issue.
+async def _do_spawn(body: SpawnRequest) -> SpawnResult:
+    """Core spawn logic — validates, claims, creates worktree, and writes .agent-task.
 
-    This endpoint bypasses the CTO/VP polling loop for direct human
-    intervention — useful when an issue needs immediate attention or when
-    the automated batch scheduler hasn't picked it up yet.
-
-    The caller is responsible for launching the Cursor Task pointed at the
-    returned ``worktree`` path.  This endpoint only prepares the worktree
-    and ``.agent-task`` file; it does NOT start the agent automatically.
+    Extracted so both :func:`spawn_agent` (HTTP endpoint) and :func:`spawn_wave`
+    (batch spawner) can call the same business logic without duplicating code or
+    creating a circular dependency on the HTTP request/response layer.
 
     Raises
     ------
-    HTTP 404
-        When the issue number does not exist on GitHub or the issue is not
-        open (already closed or merged).
-    HTTP 409
-        When the issue already carries an ``agent:wip`` label, indicating
-        another agent has already claimed it.
-    HTTP 500
-        When the git worktree creation fails (e.g. directory already exists).
+    HTTPException(404)
+        When the issue does not exist on GitHub or is not open.
+    HTTPException(409)
+        When the issue is already claimed or the worktree directory exists.
+    HTTPException(500)
+        When ``git worktree add`` fails.
     """
+    import re as _re
+
     issue_number = body.issue_number
 
     # ── 1. Fetch issue state from GitHub ──────────────────────────────────────
@@ -245,7 +253,6 @@ async def spawn_agent(body: SpawnRequest) -> SpawnResult:
         issue_body = ""
 
     # Extract "Depends on #NNN" patterns — comma-separated, or "none" if absent.
-    import re as _re
     dep_matches = _re.findall(r"[Dd]epends\s+on\s+#(\d+)", issue_body)
     depends_on = ",".join(dep_matches) if dep_matches else "none"
 
@@ -278,13 +285,56 @@ async def spawn_agent(body: SpawnRequest) -> SpawnResult:
 
     logger.info("✅ Wrote .agent-task to %s", task_file)
 
+    spawned_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     return SpawnResult(
         spawned=issue_number,
         worktree=str(worktree_path),
         host_worktree=str(host_worktree_path),
         branch=branch,
         agent_task=agent_task_content,
+        spawned_at=spawned_at,
     )
+
+
+@router.post("/control/spawn")
+async def spawn_agent(request: Request, body: SpawnRequest) -> Response:
+    """Manually seed a new engineer agent for an open, unclaimed issue.
+
+    This endpoint bypasses the CTO/VP polling loop for direct human
+    intervention — useful when an issue needs immediate attention or when
+    the automated batch scheduler hasn't picked it up yet.
+
+    The caller is responsible for launching the Cursor Task pointed at the
+    returned ``worktree`` path.  This endpoint only prepares the worktree
+    and ``.agent-task`` file; it does NOT start the agent automatically.
+
+    When the ``Accept`` request header includes ``text/html`` the endpoint
+    returns an HTML fragment (``_spawn_success.html``) suitable for an
+    ``outerHTML`` swap.  All other callers receive the standard JSON
+    ``SpawnResult`` body — the JSON path is unchanged.
+
+    Raises
+    ------
+    HTTP 404
+        When the issue number does not exist on GitHub or the issue is not
+        open (already closed or merged).
+    HTTP 409
+        When the issue already carries an ``agent:wip`` label, indicating
+        another agent has already claimed it.
+    HTTP 500
+        When the git worktree creation fails (e.g. directory already exists).
+    """
+    result = await _do_spawn(body)
+
+    if "text/html" in request.headers.get("accept", ""):
+        agent_id = f"issue-{result.spawned}"
+        return _CTRL_TEMPLATES.TemplateResponse(
+            request,
+            "_spawn_success.html",
+            {"result": result, "agent_id": agent_id},
+        )
+
+    return JSONResponse(content=result.model_dump())
 
 
 class WaveSpawnResult(BaseModel):
@@ -360,7 +410,7 @@ async def spawn_wave(role: str = "python-developer") -> WaveSpawnResult:
         if not isinstance(issue_num, int):
             continue
         try:
-            result = await spawn_agent(SpawnRequest(issue_number=issue_num, role=role))
+            result = await _do_spawn(SpawnRequest(issue_number=issue_num, role=role))
             spawned.append(result)
             logger.info("✅ Wave spawn: issue #%d → %s", issue_num, result.worktree)
         except HTTPException as exc:
@@ -522,8 +572,6 @@ async def spawn_coordinator(body: SpawnCoordinatorRequest) -> SpawnCoordinatorRe
     HTTP 500
         When ``git worktree add`` fails.
     """
-    from datetime import datetime, timezone
-
     brain_dump = body.brain_dump.strip()
     if not brain_dump:
         raise HTTPException(status_code=422, detail="brain_dump must not be empty")

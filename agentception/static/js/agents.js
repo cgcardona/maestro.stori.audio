@@ -89,35 +89,52 @@ export function missionControl() {
       this.resultMode = null;
     },
 
-    /** POST /api/control/spawn — spawn a single engineer agent. */
+    /**
+     * POST /api/control/spawn — spawn a single engineer agent.
+     *
+     * Requests HTML via Accept: text/html so the server returns the
+     * _spawn_success.html partial on success.  The partial replaces the
+     * entire #spawn-form-container element (outerHTML swap), giving an
+     * inline success state without a page reload.
+     *
+     * Errors are still returned as JSON by FastAPI's exception handlers;
+     * those are caught and surfaced through the Alpine formError state.
+     */
     async submitSingle() {
       if (!this.selectedIssue) return;
       this.clearResult();
       this.loading = true;
+      let swapped = false;
       try {
         const resp = await fetch('/api/control/spawn', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'text/html, application/json',
+          },
           body: JSON.stringify({
             issue_number: this.selectedIssue.number,
             role: this.selectedRole,
           }),
         });
-        const data = await resp.json();
-        if (!resp.ok) {
-          this.formError = data.detail ?? `HTTP ${resp.status}`;
+        if (resp.ok) {
+          // Server returned the HTML success panel — swap it in.
+          const html = await resp.text();
+          const container = document.getElementById('spawn-form-container');
+          if (container) {
+            container.outerHTML = html;
+            swapped = true;
+          }
         } else {
-          this.result     = data;
-          this.resultMode = 'single';
-          // Mark the issue claimed in local list so the board updates instantly.
-          this.issues = this.issues.map(i =>
-            i.number === this.selectedIssue.number ? { ...i, claimed: true } : i
-          );
+          // FastAPI exception handlers always return JSON for errors.
+          const data = await resp.json();
+          this.formError = data.detail ?? `HTTP ${resp.status}`;
         }
       } catch (err) {
         this.formError = `Network error: ${err.message}`;
       } finally {
-        this.loading = false;
+        // Skip the reactive update when the Alpine host element is gone.
+        if (!swapped) this.loading = false;
       }
     },
 

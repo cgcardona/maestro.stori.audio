@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 import logging
-from typing import cast
 
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 from starlette.requests import Request
 
-from agentception.intelligence.dag import DependencyDAG, build_dag
+from agentception.intelligence.dag import DependencyDAG, IssueNode, build_dag
 from agentception.readers.pipeline_config import read_pipeline_config
 from ._shared import _TEMPLATES
 
@@ -41,9 +40,8 @@ async def dag_page(request: Request) -> HTMLResponse:
         pass
 
     # --- Enrich nodes with blocking_count and depth -------------------------
-    raw = dag.model_dump()
-    nodes: list[dict[str, object]] = raw.get("nodes", [])
-    edges: list[tuple[int, int]] = raw.get("edges", [])
+    issue_nodes: list[IssueNode] = dag.nodes
+    edges: list[tuple[int, int]] = dag.edges
 
     # blocking_count: for each node, count how many edges target it
     blocking: dict[int, int] = {}
@@ -52,10 +50,8 @@ async def dag_page(request: Request) -> HTMLResponse:
 
     # depth: BFS/topological level — "how far from a leaf are you?"
     # depth 0 = no deps (ready to start), higher = deeper chain
-    deps_map: dict[int, list[int]] = {
-        cast(int, n["number"]): cast(list[int], n["deps"]) for n in nodes
-    }
-    all_nums: set[int] = {cast(int, n["number"]) for n in nodes}
+    deps_map: dict[int, list[int]] = {n.number: n.deps for n in issue_nodes}
+    all_nums: set[int] = {n.number for n in issue_nodes}
 
     depth_cache: dict[int, int] = {}
 
@@ -73,15 +69,19 @@ async def dag_page(request: Request) -> HTMLResponse:
         depth_cache[num] = result
         return result
 
-    for node in nodes:
-        num = cast(int, node["number"])
-        node["blocking_count"] = blocking.get(num, 0)
-        node["depth"] = _depth(num, set())
+    # Build enriched dicts for the Jinja2 template (adds blocking_count + depth).
+    nodes: list[dict[str, object]] = []
+    for node in issue_nodes:
+        nd: dict[str, object] = node.model_dump()
+        nd["blocking_count"] = blocking.get(node.number, 0)
+        nd["depth"] = _depth(node.number, set())
+        nodes.append(nd)
 
     # --- Summary stats for the page header ---------------------------------
-    wip_count = sum(1 for n in nodes if n.get("has_wip"))
-    open_count = sum(1 for n in nodes if str(n.get("state", "")).upper() == "OPEN")
-    max_depth: int = max((cast(int, n.get("depth", 0)) for n in nodes), default=0)
+    wip_count = sum(1 for n in issue_nodes if n.has_wip)
+    open_count = sum(1 for n in issue_nodes if n.state.upper() == "OPEN")
+    # depth_cache is dict[int, int] — populated by the _depth calls above.
+    max_depth: int = max(depth_cache.values(), default=0)
 
     return _TEMPLATES.TemplateResponse(
         request,
