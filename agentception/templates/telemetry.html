@@ -4,77 +4,139 @@
 
 {% block content %}
 {#
-  Telemetry page: wave history as a CSS-only horizontal bar chart and a
-  summary table with per-wave timing, cost, and agent details expandable
-  via Alpine x-show.  No JS charting library — all bar widths are
-  percentages computed by the route handler.
+  Telemetry D3 Dashboard — Jinja/HTMX/Alpine architecture.
+
+  Data injection:
+    - waves_json  → <script type="application/json" id="telemetry-waves-data">
+    - trend_json  → <script type="application/json" id="telemetry-trend-data">
+  D3 reads them directly; no data lives in x-data attributes.
+
+  Tab controller:   x-data="telemetryDash()" (app.js)
+  D3 rendering:     window.telemetry.render*() (telemetry.js, loaded below)
+  Trend refresh:    hx-get="/htmx/telemetry/trend" → _telemetry_trend.html
 #}
 
-{# ── Summary stats bar ───────────────────────────────────────────────────── #}
-{# Totals are pre-computed by the route handler and passed as context variables. #}
+{# ── Embedded JSON blobs for D3 ──────────────────────────────────────────── #}
+<script type="application/json" id="telemetry-waves-data">{{ waves_json | safe }}</script>
+<script type="application/json" id="telemetry-trend-data">{{ trend_json | safe }}</script>
 
+{# ── KPI bar ─────────────────────────────────────────────────────────────── #}
 <div class="pipeline-summary-bar" role="status" aria-label="Telemetry summary">
   <div class="summary-item">
     <span class="summary-label">Waves run</span>
-    <span class="summary-value">{{ waves | length }}</span>
+    <span class="summary-value">{{ total_waves }}</span>
   </div>
   <div class="summary-item">
     <span class="summary-label">Issues worked</span>
     <span class="summary-value">{{ total_issues }}</span>
   </div>
   <div class="summary-item">
-    <span class="summary-label">Est. cost (USD)</span>
+    <span class="summary-label">Est. cost</span>
     <span class="summary-value">${{ "%.4f" | format(total_cost_usd) }}</span>
   </div>
   <div class="summary-item">
     <span class="summary-label">All-time agents</span>
     <span class="summary-value">{{ total_agents }}</span>
   </div>
+  {% if role_counts %}
+  <div class="summary-item">
+    <span class="summary-label">Top role</span>
+    <span class="summary-value" style="font-size:0.85rem;">
+      {{ role_counts | dictsort(by='value', reverse=true) | first | first }}
+    </span>
+  </div>
+  {% endif %}
 </div>
 
-{# ── Empty state ─────────────────────────────────────────────────────────── #}
-{% if not waves %}
-<div class="card mt-2">
-  <p class="text-muted empty-state">No wave history available yet. Waves appear once agents start running.</p>
-</div>
-{% else %}
+{# ── Tab strip + D3 dashboard (Alpine controller) ────────────────────────── #}
+<div x-data="telemetryDash()" class="mt-2">
 
-{# ── CSS timeline bar chart ──────────────────────────────────────────────── #}
-<section class="telemetry-chart-section mt-2" aria-label="Wave timeline">
-  <h2 class="section-title">Timeline</h2>
-  <div class="telemetry-chart card">
-    {% for wave in waves %}
-    {%   set duration_s = (wave.ended_at - wave.started_at) if wave.ended_at is not none else 0 %}
-    {%   if max_duration_s > 0 and wave.ended_at is not none %}
-    {%     set pct = ((duration_s / max_duration_s) * 100) | round(1) %}
-    {%   else %}
-    {%     set pct = 100 %}
-    {%   endif %}
-    {#   Colour: active → yellow, very short (<10 s) → grey, complete → green #}
-    {%   if wave.ended_at is none %}
-    {%     set bar_class = "telemetry-bar--active" %}
-    {%   elif duration_s < 10 %}
-    {%     set bar_class = "telemetry-bar--short" %}
-    {%   else %}
-    {%     set bar_class = "telemetry-bar--complete" %}
-    {%   endif %}
-    <div class="telemetry-bar-row" title="Batch: {{ wave.batch_id }} | Duration: {{ duration_s | int }}s | Issues: {{ wave.issues_worked | join(', ') }} | Cost: ${{ '%.4f' | format(wave.estimated_cost_usd) }}">
-      <span class="telemetry-bar-label text-muted">{{ wave.batch_id }}</span>
-      <div class="telemetry-bar-track">
-        <div class="telemetry-bar {{ bar_class }}" style="width: {{ pct }}%">
-          {% if pct > 15 %}
-          <span class="telemetry-bar-text">{{ duration_s | int }}s · {{ wave.issues_worked | length }} issue{{ 's' if wave.issues_worked | length != 1 else '' }}</span>
-          {% endif %}
-        </div>
+  {# Tab strip #}
+  <div class="telemetry-tab-strip" role="tablist" aria-label="Chart view">
+    {% set tabs = [
+      ('Gantt',       'Timeline'),
+      ('CostArea',    'Cost'),
+      ('Trend',       'Pipeline Trend'),
+      ('Donut',       'Roles'),
+      ('Scatter',     'Performance'),
+      ('StackedBar',  'Status'),
+      ('Histogram',   'Messages'),
+    ] %}
+    {% for tab_id, tab_label in tabs %}
+    <button
+      class="telemetry-tab"
+      :class="{ 'telemetry-tab--active': activeTab === '{{ tab_id }}' }"
+      @click="switchTab('{{ tab_id }}')"
+      role="tab"
+      :aria-selected="activeTab === '{{ tab_id }}'"
+    >{{ tab_label }}</button>
+    {% endfor %}
+
+    {# Trend refresh button — only shows when trend tab is active #}
+    <button
+      class="telemetry-refresh"
+      x-show="activeTab === 'Trend'"
+      x-cloak
+      hx-get="/htmx/telemetry/trend"
+      hx-target="#telemetry-trend-data"
+      hx-swap="outerHTML"
+      hx-on::after-swap="window.telemetry && window.telemetry.refreshTrendData()"
+      title="Refresh trend data"
+      aria-label="Refresh trend data"
+      style="margin-left: 0.5rem; align-self: center;"
+    >↻ Refresh</button>
+  </div>
+
+  {# ── 2-column dashboard layout ─────────────────────────────────────────── #}
+  <div class="telemetry-layout mt-2">
+
+    {# LEFT — main chart (tab-driven) #}
+    <div>
+      <div class="card telemetry-chart-main" style="padding:0;" id="chart-main"
+           x-effect="$nextTick(() => window.telemetry && window.telemetry['render' + activeTab] && window.telemetry['render' + activeTab]())">
+        <div class="telemetry-empty">Loading chart…</div>
       </div>
     </div>
-    {% endfor %}
-  </div>
-</section>
 
-{# ── Wave summary table ───────────────────────────────────────────────────── #}
-<section class="mt-3" aria-label="Wave table">
-  <h2 class="section-title">Wave History</h2>
+    {# RIGHT — always-visible sidebar charts #}
+    <div class="telemetry-sidebar">
+
+      {# Role Donut #}
+      <div class="card telemetry-sidebar-chart" style="height:200px;padding:0;">
+        <div class="telemetry-chart-label" style="padding:0.5rem 0.75rem 0;">Agent Roles</div>
+        <div id="chart-donut" style="height:172px;"></div>
+      </div>
+
+      {# Status Stacked Bar #}
+      <div class="card telemetry-sidebar-chart" style="height:200px;padding:0;">
+        <div class="telemetry-chart-label" style="padding:0.5rem 0.75rem 0;">Agent Status / Wave</div>
+        <div id="chart-stackedbar" style="height:172px;"></div>
+      </div>
+
+      {# Message Histogram #}
+      <div class="card telemetry-sidebar-chart" style="height:200px;padding:0;">
+        <div class="telemetry-chart-label" style="padding:0.5rem 0.75rem 0;">Message Distribution</div>
+        <div id="chart-histogram" style="height:172px;"></div>
+      </div>
+
+
+    </div>
+  </div>
+
+</div>{# end x-data="telemetryDash()" #}
+
+{# ── Wave History Table ───────────────────────────────────────────────────── #}
+<section class="mt-3" aria-label="Wave history table">
+  <h2 class="section-title">
+    Wave History
+    <span class="badge badge-count">{{ waves | length }}</span>
+  </h2>
+
+  {% if not waves %}
+  <div class="card">
+    <p class="text-muted empty-state">No wave history yet — waves appear once agents start running.</p>
+  </div>
+  {% else %}
   <div class="telemetry-table-wrap card">
     <table class="telemetry-table" role="table">
       <thead>
@@ -84,7 +146,6 @@
           <th class="telemetry-th">Duration</th>
           <th class="telemetry-th">Issues</th>
           <th class="telemetry-th">PRs opened</th>
-          <th class="telemetry-th">PRs merged</th>
           <th class="telemetry-th">Est. tokens</th>
           <th class="telemetry-th">Est. cost</th>
           <th class="telemetry-th"></th>
@@ -92,22 +153,17 @@
       </thead>
       <tbody>
         {% for wave in waves %}
-        {%   set row_id = "wave-" ~ loop.index %}
         {%   set duration_s = (wave.ended_at - wave.started_at) | int if wave.ended_at is not none else none %}
-        <tr
-          class="telemetry-row"
-          x-data="{ open: false }"
-        >
+        <tr class="telemetry-row" x-data="{ open: false }">
+
           <td class="telemetry-td telemetry-td--batch">
             <code class="telemetry-batch-id">{{ wave.batch_id }}</code>
           </td>
+
           <td class="telemetry-td text-muted">
-            {% if wave.started_at %}
-              {{ wave.started_at | format_ts }}
-            {% else %}
-              —
-            {% endif %}
+            {% if wave.started_at %}{{ wave.started_at | format_ts }}{% else %}—{% endif %}
           </td>
+
           <td class="telemetry-td text-muted">
             {% if duration_s is not none %}
               {{ duration_s }}s
@@ -117,6 +173,7 @@
               —
             {% endif %}
           </td>
+
           <td class="telemetry-td">
             {% if wave.issues_worked %}
               <span class="text-muted">{{ wave.issues_worked | join(', ') }}</span>
@@ -124,10 +181,11 @@
               <span class="text-muted">—</span>
             {% endif %}
           </td>
+
           <td class="telemetry-td text-muted">{{ wave.prs_opened }}</td>
-          <td class="telemetry-td text-muted">{{ wave.prs_merged }}</td>
           <td class="telemetry-td text-muted">{{ wave.estimated_tokens | int | format_number }}</td>
           <td class="telemetry-td text-muted">${{ "%.4f" | format(wave.estimated_cost_usd) }}</td>
+
           <td class="telemetry-td">
             {% if wave.agents %}
             <button
@@ -135,26 +193,21 @@
               @click="open = !open"
               :aria-expanded="open.toString()"
               aria-label="Toggle agent details"
-              x-text="open ? 'Hide' : 'Agents (' + {{ wave.agents | length }} + ')'"
+              x-text="open ? 'Hide' : 'Agents ({{ wave.agents | length }})'"
             ></button>
             {% endif %}
           </td>
         </tr>
 
-        {# Expandable agent details row #}
+        {# Agent details sub-row #}
         {% if wave.agents %}
         <tr x-show="open" x-cloak class="telemetry-agents-row">
-          <td colspan="9" class="telemetry-agents-cell">
+          <td colspan="8" class="telemetry-agents-cell">
             <div class="telemetry-agents-list">
               {% for agent in wave.agents %}
               <div class="telemetry-agent-item">
-                <span
-                  class="status-badge status-badge--{{ agent.status.value }}"
-                >{{ agent.status.value }}</span>
-                <a
-                  href="/agents/{{ agent.id }}"
-                  class="telemetry-agent-role"
-                >{{ agent.role }}</a>
+                <span class="status-badge status-badge--{{ agent.status.value }}">{{ agent.status.value }}</span>
+                <a href="/agents/{{ agent.id }}" class="telemetry-agent-role">{{ agent.role }}</a>
                 {% if agent.issue_number is not none %}
                 <span class="agent-meta">#{{ agent.issue_number }}</span>
                 {% endif %}
@@ -163,6 +216,10 @@
                 {% endif %}
                 {% if agent.branch %}
                 <span class="agent-meta text-muted">{{ agent.branch }}</span>
+                {% endif %}
+                <span class="agent-meta text-muted">{{ agent.message_count }} msgs</span>
+                {% if agent.cognitive_arch %}
+                <span class="agent-meta text-muted">{{ agent.cognitive_arch }}</span>
                 {% endif %}
               </div>
               {% endfor %}
@@ -175,48 +232,25 @@
       </tbody>
     </table>
   </div>
+  {% endif %}
 </section>
 
-{% endif %}{# if not waves #}
+{% endblock %}
 
-{# ── Pipeline Trend (Postgres) ────────────────────────────────────────────── #}
-{% if trend_count > 0 %}
-<section class="telemetry-trend-section mt-2" aria-label="Pipeline trend (last 24 h)">
-  <h2 class="section-title">Pipeline Trend
-    <span class="badge badge-count">{{ trend_count }} snapshots</span>
-  </h2>
-  <div class="card trend-card"
-    x-data='trendChart(
-      {{ trend_labels | tojson }},
-      {{ trend_issues | tojson }},
-      {{ trend_prs | tojson }},
-      {{ trend_agents | tojson }}
-    )'
-    x-init="draw()"
-  >
-    <div class="trend-legend">
-      <span class="trend-legend-item"><span class="trend-dot trend-dot--issues"></span>Issues open</span>
-      <span class="trend-legend-item"><span class="trend-dot trend-dot--prs"></span>PRs open</span>
-      <span class="trend-legend-item"><span class="trend-dot trend-dot--agents"></span>Agents active</span>
-    </div>
-    <canvas id="trend-canvas" class="trend-canvas" width="800" height="200"
-            aria-label="Pipeline trend chart" role="img"></canvas>
-    <div class="trend-foot text-muted text-sm mt-1">
-      Last 24 hours · sampled every ~5 s · {{ trend_count }} points
-    </div>
-  </div>
-</section>
-{% else %}
-<section class="telemetry-trend-section mt-2">
-  <h2 class="section-title">Pipeline Trend</h2>
-  <div class="card">
-    <p class="text-muted empty-state">
-      No trend data yet — snapshots accumulate after the poller's first successful DB write.
-    </p>
-  </div>
-</section>
-{% endif %}
-
-{# trendChart() lives in /static/app.js #}
-
+{% block extra_scripts %}
+{# D3 v7 — loaded only on /telemetry, not in base.html #}
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="/static/telemetry.js"></script>
+<script>
+  // Trigger initial D3 renders after page load.
+  // Tab-driven main chart starts with Gantt (renderGantt → #chart-main).
+  // Sidebar charts always render into their dedicated containers.
+  document.addEventListener('DOMContentLoaded', function () {
+    if (!window.telemetry) return;
+    window.telemetry.renderGantt();                       // main chart (initial tab)
+    window.telemetry.renderDonut('chart-donut');          // sidebar: role donut
+    window.telemetry.renderStackedBar('chart-stackedbar'); // sidebar: status bars
+    window.telemetry.renderHistogram('chart-histogram');  // sidebar: message histogram
+  });
+</script>
 {% endblock %}

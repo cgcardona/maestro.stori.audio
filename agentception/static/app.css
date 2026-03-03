@@ -2355,84 +2355,178 @@ main {
   align-items: center;
 }
 
-/* ── Telemetry ────────────────────────────────────────────────── */
+/* ═══ Telemetry Dashboard ════════════════════════════════════════════════ */
 
-.telemetry-chart {
+/* ── Tab strip ──────────────────────────────────────────────────── */
+
+.telemetry-tab-strip {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-elevated);
+  width: fit-content;
+}
+
+.telemetry-tab {
+  padding: 0.5rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border-default);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.telemetry-tab:last-child {
+  border-right: none;
+}
+
+.telemetry-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.telemetry-tab--active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.telemetry-tab--active:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ── 2-column dashboard layout ──────────────────────────────────── */
+
+.telemetry-layout {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .telemetry-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Main chart area (left column) ─────────────────────────────── */
+
+.telemetry-chart-main {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  height: 380px;
+  position: relative;
+  overflow: hidden;
+}
+
+.telemetry-chart-main svg {
+  display: block;
+}
+
+/* ── Sidebar (right column) ─────────────────────────────────────── */
+
+.telemetry-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 1rem 1.25rem;
-}
-
-.telemetry-bar-row {
-  display: flex;
-  align-items: center;
   gap: 0.75rem;
-  cursor: default;
 }
 
-.telemetry-bar-label {
-  flex: 0 0 220px;
-  font-size: 0.6875rem;
-  font-family: var(--font-mono);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-align: right;
-  color: var(--text-muted);
-}
-
-.telemetry-bar-track {
-  flex: 1;
+.telemetry-sidebar-chart {
   background: var(--bg-elevated);
-  border-radius: var(--radius-sm);
-  height: 22px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  padding: 0.75rem;
   overflow: hidden;
 }
 
-.telemetry-bar {
-  height: 100%;
-  border-radius: var(--radius-sm);
+.telemetry-sidebar-chart svg {
+  display: block;
+}
+
+.telemetry-chart-label {
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+/* ── Empty / loading states ─────────────────────────────────────── */
+
+.telemetry-empty {
   display: flex;
   align-items: center;
-  min-width: 4px;
-  transition: opacity 0.15s;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 0.82rem;
 }
 
-.telemetry-bar:hover {
-  opacity: 0.8;
-}
+/* ── D3 shared styles ───────────────────────────────────────────── */
 
-.telemetry-bar--complete {
-  background: var(--grad-success);
-}
-
-.telemetry-bar--active {
-  background: var(--grad-warm);
-  animation: bar-pulse 2s ease-in-out infinite;
-}
-
-.telemetry-bar--short {
-  background: var(--text-muted);
-}
-
-@keyframes bar-pulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.6; }
-}
-
-.telemetry-bar-text {
-  font-size: 0.6rem;
-  font-weight: 700;
-  color: rgba(0, 0, 0, 0.7);
-  padding: 0 0.4rem;
+.d3-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--bg-void);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.65rem;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  line-height: 1.45;
   white-space: nowrap;
-  overflow: hidden;
+  z-index: 100;
+  opacity: 0;
+  transition: opacity 0.1s;
 }
+
+.d3-tooltip.visible {
+  opacity: 1;
+}
+
+.d3-tooltip-key {
+  color: var(--text-muted);
+  margin-right: 0.3rem;
+}
+
+/* SVG axis + grid lines pick up theme colors automatically */
+.d3-axis text {
+  fill: var(--text-muted);
+  font-size: 0.7rem;
+  font-family: var(--font-sans);
+}
+
+.d3-axis path,
+.d3-axis line {
+  stroke: var(--border-subtle);
+}
+
+.d3-grid line {
+  stroke: var(--border-subtle);
+  stroke-dasharray: 3 3;
+  opacity: 0.6;
+}
+
+.d3-crosshair {
+  stroke: var(--text-muted);
+  stroke-dasharray: 4 3;
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+/* ── Telemetry wave history table ───────────────────────────────── */
 
 .telemetry-table-wrap {
   overflow-x: auto;
-  padding: 0;
 }
 
 .telemetry-table {
@@ -2509,45 +2603,23 @@ main {
   color: var(--text-primary);
 }
 
-/* ── Trend / sparkline ────────────────────────────────────────── */
+/* ── Trend refresh button ───────────────────────────────────────── */
 
-.trend-card { padding: 1rem; }
-
-.trend-canvas {
-  display: block;
-  width: 100%;
-  height: auto;
-  max-height: 200px;
-  border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.01);
-}
-
-.trend-legend {
-  display: flex;
-  gap: 1.25rem;
-  margin-bottom: 0.75rem;
-  font-size: 0.75rem;
+.telemetry-refresh {
+  font-size: 0.72rem;
   color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
 }
 
-.trend-legend-item {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
+.telemetry-refresh:hover {
+  color: var(--text-secondary);
+  border-color: var(--border-default);
 }
-
-.trend-dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-}
-
-.trend-dot--issues { background: var(--accent); }
-.trend-dot--prs    { background: var(--info); }
-.trend-dot--agents { background: var(--success); }
-
-.trend-foot { text-align: right; }
 
 /* ── Run history table ────────────────────────────────────────── */
 
@@ -3489,30 +3561,7 @@ main {
   }
 }
 
-/* ── Table convenience selectors ──────────────────────────────── */
-
-/* Issues / PRs tables — th elements are not always class-annotated */
-.telemetry-table th {
-  font-size: 0.6rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--text-muted);
-  padding: 0.625rem 0.875rem;
-  text-align: left;
-  border-bottom: 1px solid var(--border-subtle);
-  white-space: nowrap;
-  background: var(--bg-void);
-  position: sticky;
-  top: 52px; /* offset for fixed nav */
-  z-index: 1;
-}
-
-.telemetry-table td {
-  padding: 0.5rem 0.875rem;
-  vertical-align: middle;
-  border-bottom: 1px solid rgba(255,255,255,0.03);
-}
+/* ── Telemetry table element selectors (non-BEM rows inherit styles) ─── */
 
 .telemetry-table tbody tr {
   transition: background 0.12s;
@@ -3522,7 +3571,6 @@ main {
   background: rgba(139, 92, 246, 0.04);
 }
 
-/* Row links within table */
 .telemetry-table td a {
   color: var(--text-primary);
   font-weight: 500;

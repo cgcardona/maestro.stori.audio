@@ -18,7 +18,7 @@
  *   scalingAdvisor(initial)                   — scaling recommendation banner
  *   prViolations(initial)                     — out-of-order PR banner
  *   staleClaimCard(claim)                     — stale-claim clear action
- *   trendChart(labels, issues, prs, agents)   — telemetry sparkline
+ *   telemetryDash()                           — telemetry D3 dashboard tab switching
  *   configPanel(initial)                      — pipeline config editor
  *   spawnForm()                               — manual spawn form
  *   exportPanel()                             — template export
@@ -664,69 +664,40 @@ function issueCard(issueNumber) {
  * @param {number[]} prs     - PR counts per bucket.
  * @param {number[]} agents  - Agent counts per bucket.
  */
-function trendChart(labels, issues, prs, agents) {
+// ---------------------------------------------------------------------------
+// Telemetry — D3 dashboard tab controller
+// ---------------------------------------------------------------------------
+
+/**
+ * telemetryDash()
+ *
+ * Minimal Alpine component that owns tab state for the telemetry D3 dashboard.
+ * The actual D3 rendering lives in telemetry.js (loaded only on /telemetry).
+ *
+ * Tab IDs map to window.telemetry render functions:
+ *   'Gantt' → window.telemetry.renderGantt
+ *   'CostArea' → window.telemetry.renderCostArea
+ *   etc.
+ */
+function telemetryDash() {
   return {
-    labels, issues, prs, agents,
+    activeTab: 'Gantt',
 
-    draw() {
-      const canvas = document.getElementById('trend-canvas');
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      const W = canvas.width, H = canvas.height;
-      const pad = { top: 16, right: 24, bottom: 28, left: 40 };
-      const iW = W - pad.left - pad.right;
-      const iH = H - pad.top  - pad.bottom;
-
-      ctx.clearRect(0, 0, W, H);
-
-      const allVals = [...this.issues, ...this.prs, ...this.agents];
-      const maxY    = Math.max(...allVals, 1);
-      const n       = this.labels.length;
-      if (n < 2) return;
-
-      const xOf = i => pad.left + (i / (n - 1)) * iW;
-      const yOf = v => pad.top + iH - (v / maxY) * iH;
-
-      const series = [
-        { data: this.issues, color: '#8b5cf6' },
-        { data: this.prs,    color: '#06b6d4' },
-        { data: this.agents, color: '#22c55e' },
-      ];
-
-      // Grid lines
-      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-      ctx.lineWidth = 1;
-      for (let g = 0; g <= 4; g++) {
-        const y = pad.top + (g / 4) * iH;
-        ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + iW, y);
-        ctx.stroke();
-        ctx.fillStyle  = 'rgba(255,255,255,0.35)';
-        ctx.font       = '10px monospace';
-        ctx.textAlign  = 'right';
-        ctx.fillText(Math.round(maxY * (1 - g / 4)), pad.left - 6, y + 4);
-      }
-
-      // Series lines
-      series.forEach(({ data, color }) => {
-        ctx.beginPath();
-        ctx.strokeStyle = color;
-        ctx.lineWidth   = 1.5;
-        ctx.lineJoin    = 'round';
-        data.forEach((v, i) => {
-          const x = xOf(i), y = yOf(v);
-          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-        });
-        ctx.stroke();
+    switchTab(tab) {
+      this.activeTab = tab;
+      this.$nextTick(() => {
+        if (window.telemetry && window.telemetry['render' + tab]) {
+          window.telemetry['render' + tab]();
+        }
       });
+    },
 
-      // X-axis labels — ~6 evenly spaced
-      const step = Math.max(1, Math.floor(n / 6));
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      ctx.font      = '10px monospace';
-      ctx.textAlign = 'center';
-      for (let i = 0; i < n; i += step) {
-        ctx.fillText(this.labels[i], xOf(i), H - 6);
-      }
+    init() {
+      this.$nextTick(() => {
+        if (window.telemetry) {
+          window.telemetry.renderGantt();
+        }
+      });
     },
   };
 }
