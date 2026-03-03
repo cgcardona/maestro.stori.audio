@@ -22,7 +22,7 @@
 //     _worktrees.scss   Agent Sandboxes / worktrees page
 //     _docs.scss        Docs page (Markdown prose rendering)
 //     _transcripts.scss Transcripts page, scrollbar, media queries
-//     _brain-dump.scss  Brain Dump page
+//     _plan.scss        Plan page
 //     _roles.scss       Cognitive Architecture Studio
 //     _agents.scss      Agents list page
 //     _config.scss      Pipeline Config page
@@ -51,7 +51,7 @@
 @use 'pages/worktrees';
 @use 'pages/docs';
 @use 'pages/transcripts';
-@use 'pages/brain-dump';
+@use 'pages/plan';
 @use 'pages/roles';
 @use 'pages/agents';
 @use 'pages/config';
