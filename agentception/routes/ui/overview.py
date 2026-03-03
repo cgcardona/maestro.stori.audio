@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json as _json
 import logging
 from itertools import groupby as _groupby
 
@@ -50,12 +51,23 @@ async def overview(request: Request) -> HTMLResponse:
     state = get_state() or PipelineState.empty()
     all_phase_labels: list[str] = []
     label_is_pinned: bool = False
+    active_org: str | None = None
 
     try:
         pipeline_cfg = await read_pipeline_config()
         all_phase_labels = pipeline_cfg.active_labels_order
     except Exception as exc:
         logger.warning("⚠️ Could not read pipeline config: %s", exc)
+
+    try:
+        _cfg_path = _settings.repo_dir / ".cursor" / "pipeline-config.json"
+        if _cfg_path.exists():
+            _raw_cfg: object = _json.loads(_cfg_path.read_text(encoding="utf-8"))
+            if isinstance(_raw_cfg, dict):
+                _org_val = _raw_cfg.get("active_org")
+                active_org = _org_val if isinstance(_org_val, str) else None
+    except Exception as exc:
+        logger.warning("⚠️ Could not read active_org from pipeline config: %s", exc)
 
     try:
         from agentception.readers.active_label_override import get_pin
@@ -122,6 +134,7 @@ async def overview(request: Request) -> HTMLResponse:
             "pr_violations": [v.model_dump() for v in pr_violations],
             "poller_paused": poller_paused,
             "phase_lanes": phase_lanes,
+            "active_org": active_org,
         },
     )
 

@@ -14,8 +14,8 @@
  *   nav.js          — projectSwitcher
  *   overview.js     — pipelineDashboard, agentCard, phaseSwitcher,
  *                     pipelineControl, sweepControl, waveControl,
- *                     conductorModal, scalingAdvisor, prViolations,
- *                     staleClaimCard, issueCard
+ *                     conductorModal, runConductorPanel, scalingAdvisor,
+ *                     prViolations, staleClaimCard, issueCard
  *   agents.js       — agentsPage, missionControl
  *   telemetry.js    — telemetryDash, waveTable
  *   dag.js          — dagVisualization
@@ -35,7 +35,7 @@ import { projectSwitcher } from './nav.js';
 import {
   pipelineDashboard, agentCard, phaseSwitcher, pipelineControl,
   sweepControl, waveControl, conductorModal, scalingAdvisor, prViolations,
-  staleClaimCard, issueCard, approvalCard,
+  staleClaimCard, issueCard, approvalCard, runConductorPanel,
 } from './overview.js';
 import { agentsPage, missionControl } from './agents.js';
 import { telemetryDash, waveTable } from './telemetry.js';
@@ -55,7 +55,7 @@ Object.assign(window, {
   projectSwitcher,
   pipelineDashboard, agentCard, phaseSwitcher, pipelineControl,
   sweepControl, waveControl, conductorModal, scalingAdvisor, prViolations,
-  staleClaimCard, issueCard, approvalCard,
+  staleClaimCard, issueCard, approvalCard, runConductorPanel,
   agentsPage, missionControl,
   telemetryDash, waveTable,
   dagVisualization,
