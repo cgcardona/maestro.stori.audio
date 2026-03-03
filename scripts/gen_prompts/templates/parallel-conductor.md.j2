@@ -450,6 +450,23 @@ $(gh pr list --repo "$GH_REPO" --state open \
     echo "   Push new GitHub issues with phase/batch labels to start the next development cycle."
   fi
 
+STEP 7.5 — POST-WAVE STALE BRANCH CLEANUP:
+  # Belt-and-suspenders sweep for remote branches that survived after PR merge.
+  # GitHub auto-delete-head-branches is ENABLED on this repo, so this step
+  # mainly catches race conditions (merge-then-disable race, manual merges, etc.)
+  # Only branches that have a confirmed merged PR are deleted.
+  git fetch --prune
+  STALE_BRANCHES=$(git branch -r 2>/dev/null | grep -v "origin/main\|origin/dev\|HEAD" | sed 's|  origin/||' | tr -d ' ')
+  for br in $STALE_BRANCHES; do
+    MERGED=$(gh pr list --head "$br" --state merged --json number --jq '.[0].number' --repo "$GH_REPO" 2>/dev/null)
+    if [ -n "$MERGED" ]; then
+      git push origin --delete "$br" 2>/dev/null \
+        && echo "🧹 Deleted $br (PR #$MERGED merged)" \
+        || echo "⚠️  Could not delete $br — may already be gone"
+    fi
+  done
+  echo "✅ Stale branch sweep complete"
+
 STEP 8 — SELF-DESTRUCT:
   REPO=$(git worktree list | head -1 | awk '{print $1}')
   WORKTREE=$(pwd)
