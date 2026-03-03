@@ -10,14 +10,14 @@
     <h1 class="page-title">Transcript Browser</h1>
     <p class="page-subtitle">
       {{ total }} conversation{{ 's' if total != 1 else '' }} found
-      {% if transcripts_dir %} · <code style="font-size:0.78rem;color:var(--text-muted);">{{ transcripts_dir }}</code>{% endif %}
+      {% if transcripts_dir %} · <code class="dir-badge">{{ transcripts_dir }}</code>{% endif %}
     </p>
   </div>
 </div>
 
 {% if error %}
-<div class="card" style="border-left:3px solid var(--danger);margin-bottom:1rem;">
-  <p style="color:var(--danger-dim);">⚠️ {{ error }}</p>
+<div class="card alert-card--danger">
+  <p class="alert-text--danger">⚠️ {{ error }}</p>
 </div>
 {% endif %}
 
@@ -28,26 +28,24 @@
   x-data='transcriptBrowser({{ filter_q | tojson }}, {{ filter_role | tojson }}, {{ filter_status | tojson }})'
   x-init="applyFilters()"
 >
-  <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem;">
+  <div class="filter-bar">
     {# Search #}
-    <div style="position:relative;flex:1;min-width:200px;">
+    <div class="search-wrapper">
       <input
         type="search"
         placeholder="Search conversations…"
-        class="filter-input"
-        style="width:100%;padding-left:2rem;"
+        class="filter-input filter-input--search"
         x-model="q"
         @input.debounce.200ms="applyFilters()"
       />
-      <span style="position:absolute;left:0.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);pointer-events:none;">🔍</span>
+      <span class="search-icon">🔍</span>
     </div>
 
     {# Role filter #}
     <select
-      class="filter-input"
+      class="filter-input filter-input--wide"
       x-model="filterRole"
       @change="applyFilters()"
-      style="min-width:160px;"
     >
       <option value="">All roles</option>
       {% for r in all_roles %}
@@ -60,7 +58,6 @@
       class="filter-input"
       x-model="filterStatus"
       @change="applyFilters()"
-      style="min-width:130px;"
     >
       <option value="">All statuses</option>
       <option value="done" {% if filter_status == 'done' %}selected{% endif %}>✅ Done</option>
@@ -72,7 +69,6 @@
       class="filter-input"
       x-model="sort"
       @change="applySortDom()"
-      style="min-width:150px;"
     >
       <option value="mtime">Sort: recent first</option>
       <option value="messages">Sort: most messages</option>
@@ -81,23 +77,16 @@
     </select>
 
     {% if filter_role or filter_status or filter_issue or filter_q %}
-    <a href="/transcripts" class="btn btn-secondary" style="white-space:nowrap;">✕ Clear filters</a>
+    <a href="/transcripts" class="btn btn-secondary filter-clear">✕ Clear filters</a>
     {% endif %}
   </div>
 
   {# ── Transcript table ────────────────────────────────────────────── #}
   {% if transcripts %}
-  <div class="card" style="padding:0;overflow:hidden;">
-    <table class="telemetry-table" style="width:100%;margin:0;table-layout:fixed;">
+  <div class="card table-card">
+    <table class="telemetry-table transcript-table">
       <colgroup>
-        <col style="width:7rem;">   {# UUID #}
-        <col style="width:10rem;">  {# Role #}
-        <col style="width:7rem;">   {# Status #}
-        <col>                       {# Preview #}
-        <col style="width:5rem;">   {# Msgs #}
-        <col style="width:5.5rem;"> {# Sub-agents #}
-        <col style="width:7rem;">   {# Issues #}
-        <col style="width:6.5rem;"> {# Modified #}
+        <col><col><col><col><col><col><col><col>
       </colgroup>
       <thead>
         <tr>
@@ -105,10 +94,10 @@
           <th>Role</th>
           <th>Status</th>
           <th>First message</th>
-          <th style="text-align:right;">Msgs</th>
-          <th style="text-align:right;">Sub-agents</th>
+          <th class="text-right">Msgs</th>
+          <th class="text-right">Sub-agents</th>
           <th>Issues</th>
-          <th style="text-align:right;">Modified</th>
+          <th class="text-right">Modified</th>
         </tr>
       </thead>
       <tbody id="transcript-tbody">
@@ -123,15 +112,14 @@
           data-words="{{ t.word_count }}"
           data-subagents="{{ t.subagent_count }}"
           class="transcript-row"
-          onclick="window.location='/transcripts/{{ t.uuid }}'"
-          style="cursor:pointer;"
+          @click="window.location='/transcripts/{{ t.uuid }}'"
           title="Open conversation {{ t.uuid }}"
         >
           {# UUID #}
           <td>
             <span class="mono-badge" title="{{ t.uuid }}">{{ t.uuid[:8] }}…</span>
             {% if t.is_coordinator %}
-            <span class="badge badge--purple" style="font-size:0.62rem;margin-left:0.25rem;">coord</span>
+            <span class="badge badge--purple badge--sm badge--coord">coord</span>
             {% endif %}
           </td>
 
@@ -161,41 +149,35 @@
           </td>
 
           {# Preview #}
-          <td style="max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.82rem;color:var(--text-primary);">
-            {{ t.preview or '—' }}
-          </td>
+          <td class="transcript-preview-cell">{{ t.preview or '—' }}</td>
 
           {# Message count #}
-          <td style="text-align:right;font-variant-numeric:tabular-nums;font-size:0.82rem;">
-            {{ t.message_count }}
-          </td>
+          <td class="transcript-count-cell">{{ t.message_count }}</td>
 
           {# Sub-agents #}
-          <td style="text-align:right;">
+          <td class="transcript-subagent-cell">
             {% if t.has_subagents %}
-            <span class="badge badge--blue" style="font-size:0.68rem;">{{ t.subagent_count }}</span>
+            <span class="badge badge--blue badge--xs">{{ t.subagent_count }}</span>
             {% else %}
-            <span style="color:var(--text-faint);font-size:0.75rem;">—</span>
+            <span class="text-faint">—</span>
             {% endif %}
           </td>
 
           {# Linked issues #}
-          <td style="font-size:0.78rem;">
+          <td class="transcript-issues-cell">
             {% for n in (t.linked_issues or [])[:3] %}
-            <a href="/issues/{{ n }}" onclick="event.stopPropagation();" class="issue-link">#{{ n }}</a>{% if not loop.last %} {% endif %}
+            <a href="/issues/{{ n }}" @click.stop class="issue-link">#{{ n }}</a>{% if not loop.last %} {% endif %}
             {% endfor %}
             {% if (t.linked_issues | length) > 3 %}
-            <span style="color:var(--text-muted);">+{{ (t.linked_issues | length) - 3 }}</span>
+            <span class="text-muted">+{{ (t.linked_issues | length) - 3 }}</span>
             {% endif %}
             {% if not t.linked_issues %}
-            <span style="color:var(--text-faint);">—</span>
+            <span class="text-faint">—</span>
             {% endif %}
           </td>
 
           {# Modified date #}
-          <td style="text-align:right;font-size:0.75rem;color:var(--text-muted);">
-            {{ t.mtime | int | timestamp_to_date }}
-          </td>
+          <td class="transcript-date-cell">{{ t.mtime | int | timestamp_to_date }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -211,45 +193,5 @@
   {% endif %}
 
 </div>{# /filter-group #}
-
-<style>
-  .filter-input {
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-default);
-    color: var(--text-primary);
-    border-radius: 6px;
-    padding: 0.4rem 0.65rem;
-    font-size: 0.83rem;
-    outline: none;
-    transition: border-color 0.15s;
-  }
-  .filter-input:focus { border-color: var(--accent); }
-  .filter-input option { background: var(--bg-elevated); }
-
-  .transcript-row:hover td { background: var(--bg-elevated); }
-  .transcript-row td { transition: background 0.1s; }
-
-  .mono-badge {
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
-    color: var(--text-muted);
-    background: var(--bg-surface);
-    border: 1px solid var(--border-subtle);
-    border-radius: 4px;
-    padding: 0.15rem 0.35rem;
-  }
-
-  .issue-link {
-    color: var(--accent-bright);
-    font-size: 0.75rem;
-    text-decoration: none;
-  }
-  .issue-link:hover { text-decoration: underline; }
-
-  .badge--teal   { background: rgba(20,184,166,0.15); color: #5eead4; border-color: rgba(20,184,166,0.3); }
-  .badge--pink   { background: rgba(236,72,153,0.15); color: #f9a8d4; border-color: rgba(236,72,153,0.3); }
-  .badge--yellow { background: rgba(234,179,8,0.15);  color: #fde047; border-color: rgba(234,179,8,0.3); }
-  .badge--orange { background: rgba(249,115,22,0.15); color: #fdba74; border-color: rgba(249,115,22,0.3); }
-</style>
 
 {% endblock %}
