@@ -126,13 +126,13 @@ def _build_agent_task(
 
 def _build_coordinator_task(
     slug: str,
-    brain_dump: str,
+    plan_text: str,
     label_prefix: str,
     worktree: Path,
     host_worktree: Path,
     branch: str,
 ) -> str:
-    """Build the ``.agent-task`` content for a brain-dump coordinator worktree.
+    """Build the ``.agent-task`` content for a plan coordinator worktree.
 
     The coordinator agent reads ``WORKFLOW=bugs-to-issues`` and follows
     ``parallel-bugs-to-issues.md``: it runs the Phase Planner, creates GitHub
@@ -140,7 +140,7 @@ def _build_coordinator_task(
     launches sub-agents.  AgentCeption's only job is to prepare the worktree
     and this file — the Cursor background agent does all LLM work.
 
-    The ``BRAIN_DUMP`` section is appended as a freeform block after the
+    The ``PLAN_DUMP`` section is appended as a freeform block after the
     structured key=value header so the coordinator can read it verbatim.
     """
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -164,7 +164,7 @@ def _build_coordinator_task(
         f"ATTEMPT_N=0\n"
         f"REQUIRED_OUTPUT=phase_plan\n"
         f"ON_BLOCK=stop\n"
-        f"\nBRAIN_DUMP:\n{brain_dump}\n"
+        f"\nPLAN_DUMP:\n{plan_text}\n"
     )
 
 

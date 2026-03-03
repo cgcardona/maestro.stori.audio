@@ -343,7 +343,7 @@ class SpawnConductorResult(BaseModel):
 class SpawnCoordinatorRequest(BaseModel):
     """Request body for ``POST /api/control/spawn-coordinator``.
 
-    ``brain_dump`` is the user's raw unstructured text — feature ideas, bug
+    ``plan_text`` is the user's raw unstructured text — feature ideas, bug
     descriptions, or any free-form list of work items.  The coordinator agent
     reads this field from its ``.agent-task`` file and runs the Phase Planner
     step in ``parallel-bugs-to-issues.md``, producing labelled GitHub issues.
@@ -353,7 +353,7 @@ class SpawnCoordinatorRequest(BaseModel):
     Leave blank for the default label scheme.
     """
 
-    brain_dump: str
+    plan_text: str
     label_prefix: str = ""
 
 

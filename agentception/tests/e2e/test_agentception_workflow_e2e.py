@@ -144,7 +144,7 @@ def test_spawn_coordinator_creates_worktree(
     ):
         response = client.post(
             "/api/control/spawn-coordinator",
-            json={"brain_dump": _SAMPLE_DUMP, "label_prefix": ""},
+            json={"plan_text": _SAMPLE_DUMP, "label_prefix": ""},
         )
 
     assert response.status_code == 200
@@ -154,11 +154,11 @@ def test_spawn_coordinator_creates_worktree(
     assert "host_worktree" in data
     assert "branch" in data
     assert "agent_task" in data
-    assert data["slug"].startswith("brain-dump-"), (
-        f"slug must start with 'brain-dump-', got {data['slug']!r}"
+    assert data["slug"].startswith("plan-"), (
+        f"slug must start with 'plan-', got {data['slug']!r}"
     )
-    assert data["branch"].startswith("feat/brain-dump-"), (
-        f"branch must start with 'feat/brain-dump-', got {data['branch']!r}"
+    assert data["branch"].startswith("feat/plan-"), (
+        f"branch must start with 'feat/plan-', got {data['branch']!r}"
     )
 
     assert created, "worktree directory was never created by git worktree add"
@@ -168,9 +168,9 @@ def test_spawn_coordinator_creates_worktree(
     assert "WORKFLOW=bugs-to-issues" in content, (
         "coordinator .agent-task must declare WORKFLOW=bugs-to-issues"
     )
-    assert "BRAIN_DUMP:" in content, (
-        "coordinator .agent-task must embed the original brain dump text"
-    )
+    assert "PLAN_DUMP:" in content, (
+            "coordinator .agent-task must embed the original plan text"
+        )
 
 
 # ---------------------------------------------------------------------------
