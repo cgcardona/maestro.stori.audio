@@ -247,10 +247,10 @@
   // Sidebar charts always render into their dedicated containers.
   document.addEventListener('DOMContentLoaded', function () {
     if (!window.telemetry) return;
-    window.telemetry.renderGantt();                       // main chart (initial tab)
-    window.telemetry.renderDonut('chart-donut');          // sidebar: role donut
+    window.telemetry.renderTrend();                        // main chart (initial tab = Pipeline Trend)
+    window.telemetry.renderDonut('chart-donut');           // sidebar: role donut
     window.telemetry.renderStackedBar('chart-stackedbar'); // sidebar: status bars
-    window.telemetry.renderHistogram('chart-histogram');  // sidebar: message histogram
+    window.telemetry.renderHistogram('chart-histogram');   // sidebar: message histogram
   });
 </script>
 {% endblock %}

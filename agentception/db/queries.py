@@ -508,6 +508,90 @@ async def get_all_prs(
 
 
 # ---------------------------------------------------------------------------
+# Wave aggregation from DB — fallback when filesystem worktrees are gone
+# ---------------------------------------------------------------------------
+
+
+async def get_waves_from_db(limit: int = 100) -> list[dict[str, Any]]:
+    """Return agent runs grouped by batch_id as wave-shaped dicts.
+
+    Used by ``telemetry.aggregate_waves()`` when no ``.agent-task`` files exist
+    on the filesystem (i.e. all worktrees have been cleaned up).  Groups rows
+    in ``ac_agent_runs`` by ``batch_id``, then shapes them into the same
+    structure expected by ``WaveSummary`` so D3 charts work without changes.
+
+    Returns dicts with keys: batch_id, started_at (UNIX float), ended_at
+    (UNIX float | None), issues_worked (list[int]), prs_opened (int),
+    agents (list[dict]).  Message counts default to 0 (no transcript data).
+    """
+    try:
+        async with get_session() as session:
+            stmt = (
+                select(ACAgentRun)
+                .order_by(ACAgentRun.spawned_at.asc())
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+
+        # Group by batch_id.
+        groups: dict[str, list[Any]] = {}
+        for row in rows:
+            bid = row.batch_id or row.id  # lone runs get their own key
+            groups.setdefault(bid, []).append(row)
+
+        waves: list[dict[str, Any]] = []
+        for batch_id, members in groups.items():
+            issues_worked = sorted(
+                {r.issue_number for r in members if r.issue_number is not None}
+            )
+            prs_opened = sum(1 for r in members if r.pr_number is not None)
+            started_ts = min(r.spawned_at for r in members).timestamp()
+            completed = [r.completed_at for r in members if r.completed_at]
+            ended_ts: float | None = (
+                max(completed).timestamp() if len(completed) == len(members) and completed
+                else None
+            )
+
+            agents = [
+                {
+                    "id": r.id,
+                    "role": r.role,
+                    "status": r.status,
+                    "issue_number": r.issue_number,
+                    "pr_number": r.pr_number,
+                    "branch": r.branch,
+                    "batch_id": r.batch_id,
+                    "worktree_path": r.worktree_path,
+                    "cognitive_arch": None,
+                    "message_count": 0,
+                }
+                for r in members
+            ]
+
+            waves.append(
+                {
+                    "batch_id": batch_id,
+                    "started_at": started_ts,
+                    "ended_at": ended_ts,
+                    "issues_worked": issues_worked,
+                    "prs_opened": prs_opened,
+                    "prs_merged": 0,
+                    "estimated_tokens": 0,
+                    "estimated_cost_usd": 0.0,
+                    "agents": agents,
+                }
+            )
+
+        # Most recent first.
+        waves.sort(key=lambda w: w["started_at"], reverse=True)
+        return waves
+    except Exception as exc:
+        logger.warning("⚠️  get_waves_from_db failed (non-fatal): %s", exc)
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Counts for SSE expansion
 # ---------------------------------------------------------------------------
 

@@ -681,7 +681,7 @@ function issueCard(issueNumber) {
  */
 function telemetryDash() {
   return {
-    activeTab: 'Gantt',
+    activeTab: 'Trend',
 
     switchTab(tab) {
       this.activeTab = tab;
@@ -695,7 +695,7 @@ function telemetryDash() {
     init() {
       this.$nextTick(() => {
         if (window.telemetry) {
-          window.telemetry.renderGantt();
+          window.telemetry.renderTrend();
         }
       });
     },

@@ -5,6 +5,10 @@ Groups all ``.agent-task`` files by their ``BATCH_ID`` prefix and builds
 timestamps because agents write the task file at worktree creation time and
 update it on state changes — no separate log file is required.
 
+When no ``.agent-task`` files exist (all worktrees cleaned up), falls back
+to ``ac_agent_runs`` rows from Postgres so the telemetry charts always have
+data to display.
+
 Consumed by ``GET /api/telemetry/waves`` and future timeline UI components.
 """
 from __future__ import annotations
@@ -77,23 +81,59 @@ class WaveSummary(BaseModel):
 
 
 async def aggregate_waves() -> list[WaveSummary]:
-    """Scan all worktree ``.agent-task`` files, group by BATCH_ID, compute timing.
+    """Return WaveSummary objects, preferring filesystem data, falling back to DB.
 
-    Reads the current set of active worktrees (live filesystem state), then
-    augments with *completed* worktrees by scanning the worktrees directory for
-    task files whose directories have been removed (past agents self-destruct
-    their worktrees after opening a PR).
+    Primary source: ``.agent-task`` files in live worktrees (filesystem state).
+    Fallback: ``ac_agent_runs`` rows from Postgres, used when all worktrees have
+    been pruned so that the telemetry charts always show historical data.
 
-    Because completed worktrees are deleted, this function can only observe the
-    *currently active* agents plus any worktree task files the OS retains.  For
-    historical data beyond the current session, a persistent store would be
-    needed — that is out of scope for this issue.
-
-    Returns a list of WaveSummary objects, one per unique BATCH_ID, sorted by
-    ``started_at`` descending (most recent wave first).
+    Returns a list sorted by ``started_at`` descending (most recent wave first).
     """
     task_files = await list_active_worktrees()
-    return _build_wave_summaries(task_files, settings.worktrees_dir)
+    fs_summaries = _build_wave_summaries(task_files, settings.worktrees_dir)
+    if fs_summaries:
+        return fs_summaries
+
+    # No live worktrees — reconstruct wave summaries from DB records.
+    try:
+        from agentception.db.queries import get_waves_from_db
+
+        db_waves = await get_waves_from_db(limit=100)
+        summaries: list[WaveSummary] = []
+        for w in db_waves:
+            agents = [
+                AgentNode(
+                    id=a["id"],
+                    role=a["role"],
+                    status=AgentStatus(a["status"]) if a["status"] in AgentStatus._value2member_map_ else AgentStatus.UNKNOWN,
+                    issue_number=a["issue_number"],
+                    pr_number=a["pr_number"],
+                    branch=a["branch"],
+                    batch_id=a["batch_id"],
+                    worktree_path=a["worktree_path"],
+                    cognitive_arch=a["cognitive_arch"],
+                )
+                for a in w["agents"]
+            ]
+            total_msgs = sum(a.message_count for a in agents)
+            tokens, cost = estimate_cost(total_msgs)
+            summaries.append(
+                WaveSummary(
+                    batch_id=w["batch_id"],
+                    started_at=w["started_at"],
+                    ended_at=w["ended_at"],
+                    issues_worked=w["issues_worked"],
+                    prs_opened=w["prs_opened"],
+                    prs_merged=w["prs_merged"],
+                    estimated_tokens=tokens,
+                    estimated_cost_usd=cost,
+                    agents=agents,
+                )
+            )
+        return summaries
+    except Exception as exc:
+        logger.warning("⚠️  aggregate_waves DB fallback failed (non-fatal): %s", exc)
+        return []
 
 
 async def compute_wave_timing(worktrees: list[TaskFile]) -> tuple[float, float | None]:
