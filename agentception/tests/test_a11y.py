@@ -158,3 +158,47 @@ def test_config_panels_have_aria_labelledby() -> None:
     assert 'aria-labelledby="tab-btn-labels"' in content
     assert 'aria-labelledby="tab-btn-ab"' in content
     assert 'aria-labelledby="tab-btn-projects"' in content
+
+
+# ---------------------------------------------------------------------------
+# Brain Dump — horizontal step indicator (issue #827)
+# ---------------------------------------------------------------------------
+
+
+def test_brain_dump_stepper_present() -> None:
+    """brain_dump.html must include the horizontal step indicator nav element."""
+    content = _read("brain_dump.html")
+    assert 'class="bd-stepper"' in content, (
+        "brain_dump.html is missing the .bd-stepper nav element"
+    )
+
+
+def test_brain_dump_stepper_has_aria_label() -> None:
+    """The stepper nav must carry aria-label='Progress' for screen readers."""
+    content = _read("brain_dump.html")
+    assert 'aria-label="Progress"' in content, (
+        "brain_dump.html stepper is missing aria-label='Progress'"
+    )
+
+
+def test_brain_dump_stepper_has_four_steps() -> None:
+    """The stepper must render exactly four step labels: Dump, Preview, Running, Done."""
+    content = _read("brain_dump.html")
+    for label in ("Dump", "Preview", "Running", "Done"):
+        assert f">{label}<" in content, (
+            f"brain_dump.html stepper is missing step label '{label}'"
+        )
+
+
+def test_brain_dump_stepper_driven_by_step_var() -> None:
+    """Stepper classes must reference the existing Alpine 'step' variable, not new state."""
+    content = _read("brain_dump.html")
+    assert "step === 'input'" in content, (
+        "brain_dump.html stepper must use the existing Alpine 'step' variable"
+    )
+    assert "step === 'loading'" in content, (
+        "brain_dump.html stepper must reference 'loading' state"
+    )
+    assert "step === 'done'" in content, (
+        "brain_dump.html stepper must reference 'done' state"
+    )
