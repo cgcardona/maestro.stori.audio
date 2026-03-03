@@ -1,0 +1,14 @@
+{
+  "name": "agentception-js",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build:js": "esbuild agentception/static/js/app.js --bundle --outfile=agentception/static/app.js --platform=browser --target=es2020 --minify",
+    "build:css": "sass agentception/static/scss/app.scss agentception/static/app.css --style=compressed --no-source-map",
+    "build": "npm run build:css && npm run build:js",
+    "watch:js": "esbuild agentception/static/js/app.js --bundle --outfile=agentception/static/app.js --platform=browser --target=es2020 --watch"
+  },
+  "devDependencies": {
+    "esbuild": "latest"
+  }
+}
