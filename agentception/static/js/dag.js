@@ -95,7 +95,8 @@ export function dagVisualization() {
       const self = this;
 
       // Signal latch: mirrors this.filter so the ResizeObserver closure
-      // always holds the latest filter value without accessing Alpine state.
+      // always holds the latest filter value for observability; _render()
+      // reads filter state via Alpine's reactive filteredNodes/filteredEdges.
       let _activeFilter = this.filter;
 
       // Debounce timer for ResizeObserver — acts as a 100 ms low-pass filter
@@ -146,7 +147,7 @@ export function dagVisualization() {
       // invocation, avoiding mid-drag jitter.
       const _observer = new ResizeObserver(() => {
         clearTimeout(_resizeTimer);
-        _resizeTimer = setTimeout(() => self._render(_activeFilter), 100);
+        _resizeTimer = setTimeout(() => self._render(), 100);
       });
       const svgEl = document.getElementById('dag-svg');
       if (svgEl) _observer.observe(svgEl);
