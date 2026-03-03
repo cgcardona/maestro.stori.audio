@@ -70,3 +70,6 @@ filterwarnings = [
     # already completed; the cleanup failure has no effect on test correctness.
     "ignore::pytest.PytestUnraisableExceptionWarning",
 ]
+markers = [
+    "e2e: end-to-end smoke tests that exercise the full workflow with mocked GitHub",
+]
