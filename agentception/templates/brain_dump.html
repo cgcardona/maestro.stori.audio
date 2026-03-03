@@ -24,6 +24,72 @@
      ══════════════════════════════════════════════════════════════════════ #}
   <div class="bd-main">
 
+    {# ── Step indicator: 1 Dump → 2 Preview → 3 Running → 4 Done ─────── #}
+    <nav class="bd-stepper" aria-label="Progress">
+      <div class="bd-stepper-list">
+
+        {# Step 1: Dump — active while user is writing #}
+        <div class="bd-step"
+             :class="step === 'input' ? 'bd-step--active' : 'bd-step--done'"
+             :aria-current='step === "input" ? "step" : "false"'>
+          <span class="bd-step-bubble">
+            <span class="bd-step-check" x-show="step !== 'input'" aria-hidden="true">✓</span>
+            <span class="bd-step-num"   x-show="step === 'input'"  aria-hidden="true">1</span>
+          </span>
+          <span class="bd-step-label">Dump</span>
+        </div>
+
+        <div class="bd-step-conn"
+             :class="{'bd-step-conn--lit': step !== 'input'}"
+             aria-hidden="true"></div>
+
+        {# Step 2: Preview — planned step (wired in Phase 4 / #835) #}
+        <div class="bd-step"
+             :class="step === 'preview' ? 'bd-step--active'
+                   : (step === 'loading' || step === 'done' ? 'bd-step--done'
+                   : 'bd-step--future')"
+             :aria-current='step === "preview" ? "step" : "false"'>
+          <span class="bd-step-bubble">
+            <span class="bd-step-check" x-show="step === 'loading' || step === 'done'" aria-hidden="true">✓</span>
+            <span class="bd-step-num"   x-show="step !== 'loading' && step !== 'done'" aria-hidden="true">2</span>
+          </span>
+          <span class="bd-step-label">Preview</span>
+        </div>
+
+        <div class="bd-step-conn"
+             :class="{'bd-step-conn--lit': step === 'loading' || step === 'done'}"
+             aria-hidden="true"></div>
+
+        {# Step 3: Running — active while the coordinator is running #}
+        <div class="bd-step"
+             :class="step === 'loading' ? 'bd-step--active'
+                   : (step === 'done'   ? 'bd-step--done'
+                   : 'bd-step--future')"
+             :aria-current='step === "loading" ? "step" : "false"'>
+          <span class="bd-step-bubble">
+            <span class="bd-step-check" x-show="step === 'done'"    aria-hidden="true">✓</span>
+            <span class="bd-step-num"   x-show="step !== 'done'"    aria-hidden="true">3</span>
+          </span>
+          <span class="bd-step-label">Running</span>
+        </div>
+
+        <div class="bd-step-conn"
+             :class="{'bd-step-conn--lit': step === 'done'}"
+             aria-hidden="true"></div>
+
+        {# Step 4: Done — active once the coordinator has been queued #}
+        <div class="bd-step"
+             :class="step === 'done' ? 'bd-step--active' : 'bd-step--future'"
+             :aria-current='step === "done" ? "step" : "false"'>
+          <span class="bd-step-bubble">
+            <span class="bd-step-num" aria-hidden="true">4</span>
+          </span>
+          <span class="bd-step-label">Done</span>
+        </div>
+
+      </div>
+    </nav>
+
     {# ── Step: INPUT ──────────────────────────────────────────────────── #}
     <div x-show="step === 'input'" x-transition.opacity>
 
