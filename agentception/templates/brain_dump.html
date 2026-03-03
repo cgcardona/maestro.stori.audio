@@ -6,9 +6,10 @@
   ─────────────────────────────────────────────────────────────────────────────
   Jinja  : page copy, funnel stage structure, seed chips, recent-runs (initial)
   HTMX   : refreshes #bd-recent-runs after submit (triggered from Alpine)
-  Alpine : step machine (input → loading → done), form state, loading animation
+  Alpine : step machine (input → previewing → loading → done), form state,
+           phase card preview, loading animation
   CSS    : app.css  §  Brain Dump
-  JS     : app.js   →  brainDump()
+  JS     : brain_dump.js  →  brainDump()
   ─────────────────────────────────────────────────────────────────────────────
 #}
 
@@ -20,7 +21,7 @@
 >
 
   {# ══════════════════════════════════════════════════════════════════════
-     LEFT — three-step form (input → loading → done)
+     LEFT — four-step form (input → previewing → loading → done)
      ══════════════════════════════════════════════════════════════════════ #}
   <div class="bd-main">
 
@@ -117,6 +118,63 @@
 
       <div class="bd-error" x-show="errorMsg" x-transition>
         <span x-text="errorMsg"></span>
+      </div>
+
+    </div>
+
+    {# ── Step: PREVIEWING — phase card confirmation ───────────────────── #}
+    <div class="bd-preview-panel" x-show="step === 'previewing'" x-transition.opacity>
+
+      <h2 class="bd-preview-title">Here's the plan</h2>
+      <p class="bd-preview-sub">
+        Review the phases below. Each phase groups related work that can run in parallel.
+        Phases with dependencies wait until their predecessors are merged.
+      </p>
+
+      <div class="bd-phase-cards">
+        <template x-for="(phase, i) in phases" :key="phase.label">
+          <div class="bd-phase-card">
+
+            <div class="bd-phase-card-header">
+              <span class="bd-phase-label" x-text="phase.label"></span>
+              <span class="bd-phase-issue-count">
+                ~<span x-text="phase.estimated_issue_count"></span>
+                <span x-text="phase.estimated_issue_count === 1 ? 'issue' : 'issues'"></span>
+              </span>
+            </div>
+
+            <p class="bd-phase-description" x-text="phase.description"></p>
+
+            <div class="bd-phase-deps" x-show="phase.depends_on && phase.depends_on.length > 0">
+              <span class="bd-phase-deps-label">Depends on:</span>
+              <template x-for="dep in phase.depends_on" :key="dep">
+                <span class="bd-phase-dep-chip" x-text="dep"></span>
+              </template>
+            </div>
+
+          </div>
+        </template>
+      </div>
+
+      <div class="bd-error" x-show="errorMsg" x-transition>
+        <span x-text="errorMsg"></span>
+      </div>
+
+      <div class="bd-preview-actions">
+        <button
+          class="btn btn-secondary bd-back-btn"
+          @click="editDump()"
+          :disabled="submitting"
+        >
+          ← Edit dump
+        </button>
+        <button
+          class="btn btn-primary bd-confirm-btn"
+          @click="confirmAndCreate()"
+          :disabled="submitting"
+        >
+          Looks good — Create Issues →
+        </button>
       </div>
 
     </div>
