@@ -80,10 +80,8 @@ async def dag_page(request: Request) -> HTMLResponse:
     # --- Summary stats for the page header ---------------------------------
     wip_count = sum(1 for n in issue_nodes if n.has_wip)
     open_count = sum(1 for n in issue_nodes if n.state.upper() == "OPEN")
-    max_depth: int = max(
-        (int(nd["depth"]) for nd in nodes),
-        default=0,
-    )
+    # depth_cache is dict[int, int] — populated by the _depth calls above.
+    max_depth: int = max(depth_cache.values(), default=0)
 
     return _TEMPLATES.TemplateResponse(
         request,
