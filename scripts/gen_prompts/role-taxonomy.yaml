@@ -38,6 +38,7 @@ levels:
           - da_vinci
           - newton
           - darwin
+          - gabriel_cardona
         compatible_skill_domains:
           - llm
           - python
@@ -65,6 +66,7 @@ levels:
           - bjarne_stroustrup
           - barbara_liskov
           - wozniak
+          - gabriel_cardona
         compatible_skill_domains:
           - fastapi
           - postgresql
@@ -89,6 +91,7 @@ levels:
           - patrick_collison
           - da_vinci
           - nassim_taleb
+          - gabriel_cardona
         compatible_skill_domains:
           - llm
           - javascript
@@ -212,6 +215,7 @@ levels:
           - barbara_liskov
           - andy_grove
           - joe_armstrong
+          - gabriel_cardona
         compatible_skill_domains:
           - fastapi
           - python
@@ -373,6 +377,7 @@ levels:
           - tim_berners_lee
           - patrick_collison
           - anders_hejlsberg
+          - gabriel_cardona
         compatible_skill_domains:
           - fastapi
           - python
@@ -396,6 +401,7 @@ levels:
           - ilya_sutskever
           - demis_hassabis
           - fei_fei_li
+          - gabriel_cardona
         compatible_skill_domains:
           - python
           - llm
@@ -423,6 +429,7 @@ levels:
           - dhh
           - rich_hickey
           - nassim_taleb
+          - gabriel_cardona
         compatible_skill_domains:
           - python
           - fastapi
@@ -508,6 +515,7 @@ levels:
           - hamming
           - dhh
           - don_norman
+          - gabriel_cardona
         compatible_skill_domains:
           - python
           - fastapi
@@ -530,6 +538,7 @@ levels:
           - steve_jobs
           - wozniak
           - don_norman
+          - gabriel_cardona
         compatible_skill_domains:
           - swift
           - swift_ui
@@ -577,6 +586,7 @@ levels:
           - ilya_sutskever
           - fei_fei_li
           - john_carmack
+          - gabriel_cardona
         compatible_skill_domains:
           - python
           - llm
@@ -689,6 +699,7 @@ levels:
           - rich_hickey
           - vint_cerf
           - joe_armstrong
+          - gabriel_cardona
         compatible_skill_domains:
           - python
           - fastapi
@@ -711,6 +722,7 @@ levels:
           - vint_cerf
           - tim_berners_lee
           - anders_hejlsberg
+          - gabriel_cardona
         compatible_skill_domains:
           - fastapi
           - python
@@ -733,6 +745,7 @@ levels:
           - carl_sagan
           - don_norman
           - paul_graham
+          - gabriel_cardona
         compatible_skill_domains:
           - python
           - llm
@@ -814,6 +827,7 @@ levels:
           - lovelace
           - don_norman
           - hopper
+          - gabriel_cardona
         compatible_skill_domains:
           - swift
           - swift_ui
@@ -890,6 +904,7 @@ levels:
           - vint_cerf
           - nassim_taleb
           - andy_grove
+          - gabriel_cardona
         compatible_skill_domains:
           - devops
           - kubernetes
