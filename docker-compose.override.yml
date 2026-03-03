@@ -79,6 +79,9 @@ services:
     volumes:
       # Live code — host edits are instantly visible; no rebuild needed
       - ./agentception:/app/agentception
+      # scripts/ — required so models.py can resolve _TAXONOMY_PATH at /app/scripts/
+      # (Path(__file__).parent.parent / "scripts" / ...) when __file__=/app/agentception/models.py
+      - ./scripts:/app/scripts
       # .cursor/ — mounted so pipeline-config.json and role files are readable
       # by get_active_label(), read_pipeline_config(), and the spawn endpoint.
       - ./.cursor:/app/.cursor:ro
