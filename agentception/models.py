@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 #: Roles that can be assigned to a spawned leaf agent via POST /api/control/spawn.
 #: Orchestration roles (cto, engineering-manager, qa-manager, coordinator) are
@@ -231,9 +231,9 @@ class PipelineConfig(BaseModel):
     ``worktrees_dir`` instead of the defaults in :class:`AgentCeptionSettings`.
     """
 
-    max_eng_vps: int
-    max_qa_vps: int
-    pool_size_per_vp: int
+    max_eng_vps: int = Field(gt=0, description="Maximum number of engineering VPs")
+    max_qa_vps: int = Field(gt=0, description="Maximum number of QA VPs")
+    pool_size_per_vp: int = Field(gt=0, description="Pool size per VP")
     active_labels_order: list[str]
     ab_mode: AbModeConfig = AbModeConfig()
     projects: list[ProjectConfig] = []
