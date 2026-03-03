@@ -137,101 +137,139 @@
     <p class="text-muted empty-state">No wave history yet — waves appear once agents start running.</p>
   </div>
   {% else %}
-  <div class="telemetry-table-wrap card">
-    <table class="telemetry-table" role="table">
-      <thead>
-        <tr>
-          <th class="telemetry-th">Batch ID</th>
-          <th class="telemetry-th">Start</th>
-          <th class="telemetry-th">Duration</th>
-          <th class="telemetry-th">Issues</th>
-          <th class="telemetry-th">PRs opened</th>
-          <th class="telemetry-th">Est. tokens</th>
-          <th class="telemetry-th">Est. cost</th>
-          <th class="telemetry-th"></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for wave in waves %}
-        {%   set duration_s = (wave.ended_at - wave.started_at) | int if wave.ended_at is not none else none %}
-        <tr class="telemetry-row" x-data="{ open: false }">
+  {#
+    Alpine waveTable() component — reads wave data from the embedded JSON blob
+    (#telemetry-waves-data) and drives sorting, date filtering, and CSV export
+    entirely client-side.  No server round-trip required.
+  #}
+  <div x-data='waveTable()'>
 
-          <td class="telemetry-td telemetry-td--batch">
-            <code class="telemetry-batch-id">{{ wave.batch_id }}</code>
-          </td>
+    {# ── Controls: date range filter + CSV export ─────────────────────────── #}
+    <div class="telemetry-controls">
+      <div class="telemetry-controls__filters">
+        <label class="telemetry-filter-label">
+          From
+          <input type="date" x-model="startDate" class="telemetry-date-input" aria-label="Filter from date">
+        </label>
+        <label class="telemetry-filter-label">
+          To
+          <input type="date" x-model="endDate" class="telemetry-date-input" aria-label="Filter to date">
+        </label>
+        <button
+          x-show="startDate || endDate"
+          x-cloak
+          @click="startDate = ''; endDate = ''"
+          class="btn btn-secondary telemetry-clear-btn"
+          aria-label="Clear date filter"
+        >Clear</button>
+      </div>
+      <button @click="exportCSV()" class="btn btn-secondary telemetry-export-btn">
+        ↓ Export CSV
+      </button>
+    </div>
 
-          <td class="telemetry-td text-muted">
-            {% if wave.started_at %}{{ wave.started_at | format_ts }}{% else %}—{% endif %}
-          </td>
+    {# ── Sortable wave table ───────────────────────────────────────────────── #}
+    <div class="telemetry-table-wrap card">
+      <table class="telemetry-table" role="table">
+        <thead>
+          <tr>
+            <th class="telemetry-th telemetry-th--sortable" @click="setSort('batch_id')" role="columnheader" :aria-sort="sortCol === 'batch_id' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'">
+              Batch ID <span class="telemetry-sort-icon" x-text="sortIndicator('batch_id')"></span>
+            </th>
+            <th class="telemetry-th telemetry-th--sortable" @click="setSort('started_at')" role="columnheader" :aria-sort="sortCol === 'started_at' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'">
+              Start <span class="telemetry-sort-icon" x-text="sortIndicator('started_at')"></span>
+            </th>
+            <th class="telemetry-th telemetry-th--sortable" @click="setSort('duration')" role="columnheader" :aria-sort="sortCol === 'duration' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'">
+              Duration <span class="telemetry-sort-icon" x-text="sortIndicator('duration')"></span>
+            </th>
+            <th class="telemetry-th">Issues</th>
+            <th class="telemetry-th">PRs opened</th>
+            <th class="telemetry-th">Est. tokens</th>
+            <th class="telemetry-th telemetry-th--sortable" @click="setSort('cost_usd')" role="columnheader" :aria-sort="sortCol === 'cost_usd' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'">
+              Est. cost <span class="telemetry-sort-icon" x-text="sortIndicator('cost_usd')"></span>
+            </th>
+            <th class="telemetry-th telemetry-th--sortable" @click="setSort('agent_count')" role="columnheader" :aria-sort="sortCol === 'agent_count' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'">
+              Agents <span class="telemetry-sort-icon" x-text="sortIndicator('agent_count')"></span>
+            </th>
+            <th class="telemetry-th"></th>
+          </tr>
+        </thead>
 
-          <td class="telemetry-td text-muted">
-            {% if duration_s is not none %}
-              {{ duration_s }}s
-            {% elif wave.ended_at is none %}
-              <span class="text-warning">active</span>
-            {% else %}
-              —
-            {% endif %}
-          </td>
+        {# One <tbody> per wave so x-for can yield a main row + an agent sub-row. #}
+        <template x-for='wave in sortedRows' :key='wave.batch_id'>
+          <tbody>
+            <tr class="telemetry-row">
 
-          <td class="telemetry-td">
-            {% if wave.issues_worked %}
-              <span class="text-muted">{{ wave.issues_worked | join(', ') }}</span>
-            {% else %}
-              <span class="text-muted">—</span>
-            {% endif %}
-          </td>
+              <td class="telemetry-td telemetry-td--batch">
+                <code class="telemetry-batch-id" x-text="wave.batch_id"></code>
+              </td>
 
-          <td class="telemetry-td text-muted">{{ wave.prs_opened }}</td>
-          <td class="telemetry-td text-muted">{{ wave.estimated_tokens | int | format_number }}</td>
-          <td class="telemetry-td text-muted">${{ "%.4f" | format(wave.estimated_cost_usd) }}</td>
+              <td class="telemetry-td text-muted" x-text="formatTs(wave.started_at)"></td>
 
-          <td class="telemetry-td">
-            {% if wave.agents %}
-            <button
-              class="btn btn-secondary telemetry-expand-btn"
-              @click="open = !open"
-              :aria-expanded="open.toString()"
-              aria-label="Toggle agent details"
-              x-text="open ? 'Hide' : 'Agents ({{ wave.agents | length }})'"
-            ></button>
-            {% endif %}
-          </td>
-        </tr>
+              <td class="telemetry-td text-muted">
+                <span x-show="wave.ended_at == null" class="text-warning">active</span>
+                <span x-show="wave.ended_at != null" x-text="Math.round(wave.ended_at - wave.started_at) + 's'"></span>
+              </td>
 
-        {# Agent details sub-row #}
-        {% if wave.agents %}
-        <tr x-show="open" x-cloak class="telemetry-agents-row">
-          <td colspan="8" class="telemetry-agents-cell">
-            <div class="telemetry-agents-list">
-              {% for agent in wave.agents %}
-              <div class="telemetry-agent-item">
-                <span class="status-badge status-badge--{{ agent.status.value }}">{{ agent.status.value }}</span>
-                <a href="/agents/{{ agent.id }}" class="telemetry-agent-role">{{ agent.role }}</a>
-                {% if agent.issue_number is not none %}
-                <span class="agent-meta">#{{ agent.issue_number }}</span>
-                {% endif %}
-                {% if agent.pr_number is not none %}
-                <span class="agent-meta">PR {{ agent.pr_number }}</span>
-                {% endif %}
-                {% if agent.branch %}
-                <span class="agent-meta text-muted">{{ agent.branch }}</span>
-                {% endif %}
-                <span class="agent-meta text-muted">{{ agent.message_count }} msgs</span>
-                {% if agent.cognitive_arch %}
-                <span class="agent-meta text-muted">{{ agent.cognitive_arch }}</span>
-                {% endif %}
-              </div>
-              {% endfor %}
-            </div>
-          </td>
-        </tr>
-        {% endif %}
+              <td class="telemetry-td">
+                <span class="text-muted" x-text="wave.issues_worked && wave.issues_worked.length ? wave.issues_worked.join(', ') : '—'"></span>
+              </td>
 
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+              <td class="telemetry-td text-muted" x-text="wave.prs_opened"></td>
+              <td class="telemetry-td text-muted" x-text="formatNumber(wave.estimated_tokens)"></td>
+              <td class="telemetry-td text-muted" x-text="'$' + (wave.estimated_cost_usd || 0).toFixed(4)"></td>
+              <td class="telemetry-td text-muted" x-text="(wave.agents || []).length"></td>
+
+              <td class="telemetry-td">
+                <template x-if="wave.agents && wave.agents.length">
+                  <button
+                    class="btn btn-secondary telemetry-expand-btn"
+                    @click="toggleRow(wave.batch_id)"
+                    :aria-expanded="isExpanded(wave.batch_id).toString()"
+                    aria-label="Toggle agent details"
+                    x-text="isExpanded(wave.batch_id) ? 'Hide' : 'Agents (' + wave.agents.length + ')'"
+                  ></button>
+                </template>
+              </td>
+            </tr>
+
+            {# Agent details sub-row — hidden until the expand button is clicked. #}
+            <tr x-show="isExpanded(wave.batch_id)" x-cloak class="telemetry-agents-row">
+              <td colspan="9" class="telemetry-agents-cell">
+                <div class="telemetry-agents-list">
+                  <template x-for='agent in wave.agents' :key='agent.id'>
+                    <div class="telemetry-agent-item">
+                      <span :class="'status-badge status-badge--' + agent.status" x-text="agent.status"></span>
+                      <a :href="'/agents/' + agent.id" class="telemetry-agent-role" x-text="agent.role"></a>
+                      <template x-if="agent.issue_number != null">
+                        <span class="agent-meta" x-text="'#' + agent.issue_number"></span>
+                      </template>
+                      <template x-if="agent.pr_number != null">
+                        <span class="agent-meta" x-text="'PR ' + agent.pr_number"></span>
+                      </template>
+                      <template x-if="agent.branch">
+                        <span class="agent-meta text-muted" x-text="agent.branch"></span>
+                      </template>
+                      <span class="agent-meta text-muted" x-text="agent.message_count + ' msgs'"></span>
+                      <template x-if="agent.cognitive_arch">
+                        <span class="agent-meta text-muted" x-text="agent.cognitive_arch"></span>
+                      </template>
+                    </div>
+                  </template>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </template>
+      </table>
+    </div>
+
+    {# Shown when the date filter reduces visible rows to zero. #}
+    <div x-show="sortedRows.length === 0" x-cloak class="card mt-1">
+      <p class="text-muted empty-state">No waves match the current filter — adjust the date range.</p>
+    </div>
+
+  </div>{# end x-data='waveTable()' #}
   {% endif %}
 </section>
 
