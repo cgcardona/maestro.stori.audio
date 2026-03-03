@@ -797,3 +797,32 @@ async def test_plan_spawn_coordinator_result_shape() -> None:
         assert isinstance(result, dict)
         # Either success keys or error from git path issues
         assert "batch_id" in result or "error" in result
+
+
+@pytest.mark.anyio
+async def test_plan_spawn_coordinator_agent_task_write_failure_removes_worktree() -> None:
+    """plan_spawn_coordinator removes the worktree when .agent-task write fails.
+
+    Regression test: before this fix the worktree was orphaned on write failure.
+    """
+    git_calls: list[tuple[object, ...]] = []
+
+    async def _fake_git(*args: object, **kwargs: object) -> MagicMock:
+        git_calls.append(args)
+        return _make_process(b"", returncode=0)
+
+    def _write_text_raises(*args: object, **kwargs: object) -> None:
+        raise OSError("disk full")
+
+    with patch(
+        "agentception.mcp.plan_tools.asyncio.create_subprocess_exec",
+        side_effect=_fake_git,
+    ), patch.object(Path, "write_text", _write_text_raises):
+        with pytest.raises(OSError, match="disk full"):
+            await plan_spawn_coordinator(_minimal_manifest_json())
+
+    # Two git calls expected: worktree add, then worktree remove --force (cleanup)
+    assert len(git_calls) == 2, f"Expected 2 git calls (add + cleanup), got {git_calls}"
+    remove_call = git_calls[1]
+    assert "remove" in remove_call, f"Expected 'remove' in cleanup call: {remove_call}"
+    assert "--force" in remove_call, f"Expected '--force' in cleanup call: {remove_call}"

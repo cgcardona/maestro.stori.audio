@@ -283,7 +283,21 @@ async def plan_spawn_coordinator(manifest_json: str) -> dict[str, object]:
     )
 
     agent_task_path = str(Path(worktree_path) / ".agent-task")
-    Path(agent_task_path).write_text(agent_task_content, encoding="utf-8")
+    try:
+        Path(agent_task_path).write_text(agent_task_content, encoding="utf-8")
+    except Exception as exc:
+        # Worktree was created; clean it up to avoid orphaned state.
+        cleanup = await asyncio.create_subprocess_exec(
+            "git", "worktree", "remove", "--force", worktree_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await cleanup.communicate()
+        logger.error(
+            "❌ plan_spawn_coordinator: .agent-task write failed, worktree removed — %s", exc
+        )
+        raise
+
     logger.info(
         "✅ plan_spawn_coordinator: .agent-task written to %s", agent_task_path
     )
