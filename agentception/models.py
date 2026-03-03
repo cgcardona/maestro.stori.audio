@@ -153,6 +153,7 @@ class PipelineState(BaseModel):
     closed_issues_count: int = 0
     merged_prs_count: int = 0
     stale_branches: list[str] = []
+    pending_approval: list[dict[str, object]] = []
 
     @classmethod
     def empty(cls) -> PipelineState:
@@ -176,6 +177,7 @@ class PipelineState(BaseModel):
             closed_issues_count=0,
             merged_prs_count=0,
             stale_branches=[],
+            pending_approval=[],
         )
 
 
@@ -265,6 +267,7 @@ class PipelineConfig(BaseModel):
     ab_mode: AbModeConfig = AbModeConfig()
     projects: list[ProjectConfig] = []
     active_project: str | None = None
+    approval_required_labels: list[str] = ["db-schema", "security", "api-contract"]
 
 
 class SpawnRequest(BaseModel):
@@ -308,6 +311,33 @@ class SpawnResult(BaseModel):
     branch: str
     agent_task: str
     spawned_at: str = ""
+
+
+class SpawnConductorRequest(BaseModel):
+    """Request body for ``POST /api/control/spawn-conductor``.
+
+    ``phases`` is a non-empty list of phase label strings to run the conductor
+    against.  ``org`` optionally scopes the conductor to a specific org name
+    (passed through to the ``.agent-task`` file; leave ``None`` for the default).
+    """
+
+    phases: list[str]
+    org: str | None = None
+
+
+class SpawnConductorResult(BaseModel):
+    """Response for a successful ``POST /api/control/spawn-conductor``.
+
+    ``wave_id`` is the auto-generated conductor ID (e.g. ``conductor-20260303-142201``).
+    ``host_worktree`` is the path the user should open in Cursor to activate the agent.
+    ``agent_task`` is the raw ``.agent-task`` content written to disk.
+    """
+
+    wave_id: str
+    worktree: str
+    host_worktree: str
+    branch: str
+    agent_task: str
 
 
 class SpawnCoordinatorRequest(BaseModel):

@@ -236,6 +236,106 @@
   x-cloak
 >
 
+  {# ── Conductor modal — own Alpine scope, listens for dispatch ──────────── #}
+  <div
+    x-data='conductorModal({{ state.model_dump() | tojson }})'
+    @open-conductor-modal.window="open = true"
+    @keydown.escape.window="if (open) dismiss()"
+  >
+    <div
+      class="modal-backdrop"
+      x-show="open"
+      x-cloak
+      x-transition.opacity
+      @click.self="dismiss()"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="conductor-modal-title"
+    >
+      <div class="modal-box">
+        <h2 class="modal-title" id="conductor-modal-title">🚀 Launch Wave</h2>
+
+        <template x-if="!result && !launching">
+          <div>
+            <p class="modal-body">
+              Select phases to run the conductor against. A conductor agent will
+              spawn sub-agents for every unclaimed issue in each selected phase.
+            </p>
+
+            <div class="mt-1">
+              <template x-if="state.active_label">
+                <label class="flex-row gap-1" style="align-items:center;cursor:pointer;">
+                  <input
+                    type="checkbox"
+                    :value="state.active_label"
+                    x-model="selectedPhases"
+                  />
+                  <span x-text="state.active_label"></span>
+                  <span class="label-chip label-chip--active" style="font-size:0.7rem;">active</span>
+                </label>
+              </template>
+              <template x-if="!state.active_label">
+                <p class="text-muted">No active phase — set active_labels_order in pipeline-config.json.</p>
+              </template>
+            </div>
+
+            <p class="text-muted mt-1" style="font-size:0.85rem;">
+              Estimated parallelism:
+              <strong x-text="estimatedAgents()"></strong>
+              agent<span x-text="estimatedAgents() === 1 ? '' : 's'"></span> will be spawned.
+            </p>
+
+            <div class="modal-actions">
+              <button class="btn btn-secondary" @click="dismiss()">Cancel</button>
+              <button
+                class="btn btn-primary"
+                @click="launchConductor()"
+                :disabled="selectedPhases.length === 0"
+              >
+                Confirm Launch
+              </button>
+            </div>
+          </div>
+        </template>
+
+        <template x-if="launching">
+          <div class="flex-row gap-1 mt-1" style="align-items:center;">
+            <span class="agent-pulse agent-pulse--implementing"></span>
+            <span class="text-muted">Launching conductor…</span>
+          </div>
+        </template>
+
+        <template x-if="result && !launching">
+          <div>
+            <p class="text-success mt-1">✅ Conductor ready — open in Cursor to start.</p>
+            <div class="flex-row gap-1 mt-1" style="align-items:center;flex-wrap:wrap;">
+              <code style="font-size:0.8rem;word-break:break-all;" x-text="result.host_worktree"></code>
+              <button class="btn btn-secondary" style="padding:2px 8px;font-size:0.8rem;" @click="copyPath()">Copy</button>
+            </div>
+            <p class="text-muted mt-1" style="font-size:0.8rem;">
+              Branch: <code x-text="result.branch"></code>
+            </p>
+            <div class="modal-actions">
+              <button class="btn btn-secondary" @click="dismiss()">Close</button>
+            </div>
+          </div>
+        </template>
+
+        <template x-if="error && !launching">
+          <div>
+            <div class="alert-banner mt-1" role="alert">
+              <span>❌</span>
+              <span x-text="error"></span>
+            </div>
+            <div class="modal-actions">
+              <button class="btn btn-secondary" @click="dismiss()">Close</button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
   {# ── Kill modal — global, lives at root scope ──────────────────────────── #}
   <div
     class="modal-backdrop"
@@ -528,16 +628,25 @@
             </div>
           </div>
 
-          <template x-if="state.active_label && unclaimedCount() > 0">
+          <div class="flex-row gap-1" style="flex-wrap:wrap;">
+            <template x-if="state.active_label && unclaimedCount() > 0">
+              <button
+                class="btn btn-primary btn-wave-start"
+                @click="startWave()"
+                :disabled="launching"
+                x-text="launching ? 'Launching…' : 'Start Wave'"
+                :title="'Spawn agents for all unclaimed issues in ' + state.active_label"
+                aria-label="Start pipeline wave"
+              ></button>
+            </template>
             <button
-              class="btn btn-primary btn-wave-start"
-              @click="startWave()"
-              :disabled="launching"
-              x-text="launching ? 'Launching…' : 'Start Wave'"
-              :title="'Spawn agents for all unclaimed issues in ' + state.active_label"
-              aria-label="Start pipeline wave"
-            ></button>
-          </template>
+              class="btn btn-secondary"
+              :disabled="state.agents && state.agents.length > 0"
+              @click="$dispatch('open-conductor-modal')"
+              :title="state.agents && state.agents.length > 0 ? 'Cannot launch while agents are active' : 'Launch a conductor agent across selected phases'"
+              aria-label="Launch conductor wave"
+            >🚀 Launch Wave</button>
+          </div>
           <template x-if="state.active_label && state.board_issues && state.board_issues.length > 0 && unclaimedCount() === 0">
             <span class="badge badge--green">All claimed ✓</span>
           </template>
@@ -585,6 +694,21 @@
           </span>
         </div>
       </div>
+
+      {# Pending Approval #}
+      {% if state.pending_approval %}
+      <div class="mt-2">
+        <h3 class="section-subtitle">Pending Approval</h3>
+        <div
+          id="approval-queue-container"
+          hx-get="/api/issues/approval-queue"
+          hx-trigger="load, every 10s"
+          hx-swap="innerHTML"
+        >
+          {% include 'partials/approval_queue.html' %}
+        </div>
+      </div>
+      {% endif %}
 
       {# Stale claims #}
       <div x-show="state.stale_claims && state.stale_claims.length > 0" class="mt-2">

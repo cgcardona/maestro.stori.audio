@@ -518,6 +518,112 @@ export function staleClaimCard(claim) {
 }
 
 /**
+ * Handles the approve flow for a single pending-approval card.
+ *
+ * HTMX drives the actual POST and DOM swap; this factory is reserved for
+ * any future Alpine state needed on the card (e.g. an optimistic spinner).
+ *
+ * @param {object} issue - Issue dict from PipelineState.pending_approval.
+ */
+export function approvalCard(issue) {
+  return {
+    approving: false,
+    approved: false,
+    error: null,
+
+    async approve() {
+      this.approving = true;
+      this.error = null;
+      try {
+        const res = await fetch(
+          `/api/issues/${issue.number}/approve`,
+          { method: 'POST' },
+        );
+        if (res.ok) {
+          this.approved = true;
+        } else {
+          const data = await res.json().catch(() => ({}));
+          this.error = data.detail || `HTTP ${res.status}`;
+        }
+      } catch (err) {
+        this.error = err.message || 'Network error';
+      } finally {
+        this.approving = false;
+      }
+    },
+  };
+}
+
+/**
+ * Controls the "🚀 Launch Wave" conductor modal.
+ *
+ * Listens for the `open-conductor-modal` custom event dispatched by the
+ * Launch Wave button inside waveControl.  Owns the full launch lifecycle:
+ * phase selection → POST /api/control/spawn-conductor → result display.
+ *
+ * @param {object} initial - Server-rendered PipelineState snapshot.
+ */
+export function conductorModal(initial) {
+  return {
+    open: false,
+    launching: false,
+    result: null,
+    error: null,
+    selectedPhases: [],
+    state: initial,
+
+    init() {
+      // Pre-select the active phase when the modal is initialised.
+      if (this.state?.active_label) {
+        this.selectedPhases = [this.state.active_label];
+      }
+    },
+
+    estimatedAgents() {
+      const issues = this.state?.board_issues ?? [];
+      return issues.filter(
+        i => !i.claimed && this.selectedPhases.includes(this.state.active_label)
+      ).length;
+    },
+
+    async launchConductor() {
+      this.launching = true;
+      this.result = null;
+      this.error = null;
+      try {
+        const resp = await fetch('/api/control/spawn-conductor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phases: this.selectedPhases, org: null }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          this.error = data.detail ?? `HTTP ${resp.status}`;
+        } else {
+          this.result = data;
+        }
+      } catch (err) {
+        this.error = `Network error: ${err.message}`;
+      } finally {
+        this.launching = false;
+      }
+    },
+
+    copyPath() {
+      if (this.result?.host_worktree) {
+        navigator.clipboard.writeText(this.result.host_worktree);
+      }
+    },
+
+    dismiss() {
+      this.open = false;
+      this.result = null;
+      this.error = null;
+    },
+  };
+}
+
+/**
  * Powers each issue card in the GitHub Board's open issues list.
  *
  * Keeps the inline fetch out of the template.  The analysisHtml is injected

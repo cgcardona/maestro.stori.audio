@@ -580,6 +580,89 @@ async def add_wip_label(issue_number: int) -> None:
     _cache_invalidate()
 
 
+async def add_label_to_issue(issue_number: int, label: str) -> None:
+    """Add *label* to an issue.
+
+    Follows the same pattern as :func:`add_wip_label` — runs ``gh issue edit
+    --add-label`` as a subprocess and invalidates the cache on success so
+    subsequent reads reflect the new label without waiting for TTL expiry.
+
+    Parameters
+    ----------
+    issue_number:
+        GitHub issue number to label.
+    label:
+        Label name to add (e.g. ``"approved"``).
+
+    Raises
+    ------
+    RuntimeError
+        When ``gh`` exits with a non-zero status.
+    """
+    repo = settings.gh_repo
+
+    proc = await asyncio.create_subprocess_exec(
+        "gh", "issue", "edit", str(issue_number),
+        "--repo", repo,
+        "--add-label", label,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _stdout, stderr = await proc.communicate()
+
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"gh issue edit (add label) failed (exit {proc.returncode}): "
+            f"{stderr.decode().strip()!r}"
+        )
+
+    logger.info("✅ Added %r to issue #%d", label, issue_number)
+    _cache_invalidate()
+
+
+async def ensure_label_exists(name: str, color: str, description: str) -> None:
+    """Create a GitHub label if it does not already exist.
+
+    Uses ``gh label create --force`` which is idempotent: creates the label
+    when absent and updates colour/description when present.  Safe to call
+    on every approve request without checking first.
+
+    Parameters
+    ----------
+    name:
+        Label name (e.g. ``"approved"``).
+    color:
+        Six-digit hex colour without the leading ``#`` (e.g. ``"2ea44f"``).
+    description:
+        Short human-readable label description.
+
+    Raises
+    ------
+    RuntimeError
+        When ``gh`` exits with a non-zero status.
+    """
+    repo = settings.gh_repo
+
+    proc = await asyncio.create_subprocess_exec(
+        "gh", "label", "create", name,
+        "--repo", repo,
+        "--color", color,
+        "--description", description,
+        "--force",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _stdout, stderr = await proc.communicate()
+
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"gh label create failed (exit {proc.returncode}): "
+            f"{stderr.decode().strip()!r}"
+        )
+
+    logger.info("✅ Label %r ensured on %s", name, repo)
+
+
 async def clear_wip_label(issue_number: int) -> None:
     """Remove the ``agent:wip`` label from an issue.
 
