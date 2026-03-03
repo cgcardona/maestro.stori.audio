@@ -98,10 +98,10 @@ def test_pipeline_state_empty_valid() -> None:
 
 
 def test_index_returns_html_with_agentception(client: TestClient) -> None:
-    """GET / must return 200 HTML containing the string 'AgentCeption'."""
+    """GET / must return 200 HTML containing the string 'Agentception'."""
     response = client.get("/")
     assert response.status_code == 200
-    assert "AgentCeption" in response.text
+    assert "Agentception" in response.text
 
 
 # ── TaskFile ──────────────────────────────────────────────────────────────────
