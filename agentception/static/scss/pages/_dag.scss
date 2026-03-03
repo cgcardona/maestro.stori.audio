@@ -467,6 +467,29 @@
   margin: 0 4px;
 }
 
+/* Edge-type indicator: solid line + CSS arrowhead */
+.dag-legend-edge-indicator {
+  width: 28px;
+  height: 1.5px;
+  background: #6b7280;
+  position: relative;
+  flex-shrink: 0;
+  align-self: center;
+
+  &::after {
+    content: '';
+    position: absolute;
+    right: -1px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0;
+    height: 0;
+    border-top: 3.5px solid transparent;
+    border-bottom: 3.5px solid transparent;
+    border-left: 5px solid #6b7280;
+  }
+}
+
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 
 @media (max-width: 700px) {

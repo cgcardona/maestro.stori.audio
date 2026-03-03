@@ -103,7 +103,7 @@ async def agents_list(request: Request) -> HTMLResponse:
                 completed_count += 1
 
         enriched_history.append({
-            **run,  # type: ignore[arg-type]
+            **run,
             "duration_s": duration_s,
             "duration_str": duration_str,
             "spawned_fmt": str(run.get("spawned_at", ""))[:16].replace("T", " "),

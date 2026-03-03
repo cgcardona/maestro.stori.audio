@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from typing import cast
 
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
@@ -42,7 +43,7 @@ async def dag_page(request: Request) -> HTMLResponse:
     # --- Enrich nodes with blocking_count and depth -------------------------
     raw = dag.model_dump()
     nodes: list[dict[str, object]] = raw.get("nodes", [])
-    edges: list[tuple[int, int]] = raw.get("edges", [])  # type: ignore[assignment]
+    edges: list[tuple[int, int]] = raw.get("edges", [])
 
     # blocking_count: for each node, count how many edges target it
     blocking: dict[int, int] = {}
@@ -51,8 +52,10 @@ async def dag_page(request: Request) -> HTMLResponse:
 
     # depth: BFS/topological level — "how far from a leaf are you?"
     # depth 0 = no deps (ready to start), higher = deeper chain
-    deps_map: dict[int, list[int]] = {n["number"]: n["deps"] for n in nodes}  # type: ignore[index, misc]
-    all_nums: set[int] = {n["number"] for n in nodes}  # type: ignore[index, misc]
+    deps_map: dict[int, list[int]] = {
+        cast(int, n["number"]): cast(list[int], n["deps"]) for n in nodes
+    }
+    all_nums: set[int] = {cast(int, n["number"]) for n in nodes}
 
     depth_cache: dict[int, int] = {}
 
@@ -71,14 +74,14 @@ async def dag_page(request: Request) -> HTMLResponse:
         return result
 
     for node in nodes:
-        num: int = node["number"]  # type: ignore[assignment]
-        node["blocking_count"] = blocking.get(num, 0)  # type: ignore[index]
-        node["depth"] = _depth(num, set())  # type: ignore[index]
+        num = cast(int, node["number"])
+        node["blocking_count"] = blocking.get(num, 0)
+        node["depth"] = _depth(num, set())
 
     # --- Summary stats for the page header ---------------------------------
-    wip_count = sum(1 for n in nodes if n.get("has_wip"))  # type: ignore[union-attr]
-    open_count = sum(1 for n in nodes if str(n.get("state", "")).upper() == "OPEN")  # type: ignore[union-attr]
-    max_depth: int = max((n.get("depth", 0) for n in nodes), default=0)  # type: ignore[union-attr, type-var, arg-type, assignment]
+    wip_count = sum(1 for n in nodes if n.get("has_wip"))
+    open_count = sum(1 for n in nodes if str(n.get("state", "")).upper() == "OPEN")
+    max_depth: int = max((cast(int, n.get("depth", 0)) for n in nodes), default=0)
 
     return _TEMPLATES.TemplateResponse(
         request,
