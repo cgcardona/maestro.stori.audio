@@ -1,7 +1,7 @@
-"""API route: POST /api/plan/draft — accept a brain dump and dispatch to Cursor.
+"""API routes: POST /api/plan/draft and POST /api/plan/launch.
 
-Contract
---------
+POST /api/plan/draft
+--------------------
 Input:  PlanDraftRequest(dump: str)  — non-empty, non-whitespace text
 Output: PlanDraftResponse            — draft_id (uuid4), task_file path,
                                        output_path, status='pending'
@@ -13,17 +13,38 @@ Side effects
 2. A ``.agent-task`` file is written to the new worktree using the K=V format
    that is compatible with the future TOML migration (issue #888).
 
+POST /api/plan/launch
+---------------------
+Input:  PlanLaunchRequest(yaml_text: str)  — YAML-encoded EnrichedManifest
+Output: PlanLaunchResponse                 — worktree, branch, agent_task_path,
+                                             batch_id from the coordinator spawn
+
+Steps:
+1. Parse yaml_text → dict (422 on YAML syntax error).
+2. Validate as EnrichedManifest via Pydantic (422 on field errors including
+   the phase DAG invariant — EnrichedManifest.validate_phase_dag enforces that
+   phases depend only on earlier phases, which prevents phase-level cycles).
+3. Detect issue-level cycles in the title-based depends_on graph (422 with
+   a human-readable cycle description).
+4. Call plan_spawn_coordinator(manifest_json) — fire-and-forget style.
+5. Return PlanLaunchResponse immediately.
+
 Boundary: zero imports from maestro/, muse/, kly/, or storpheus/.
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import uuid
 from pathlib import Path
 
+import yaml
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
+
+from agentception.mcp.plan_tools import plan_spawn_coordinator
+from agentception.models import EnrichedManifest, EnrichedPhase
 
 logger = logging.getLogger(__name__)
 
@@ -135,4 +156,154 @@ async def post_plan_draft(request: PlanDraftRequest) -> PlanDraftResponse:
         task_file=str(task_file_path),
         output_path=str(output_file_path),
         status="pending",
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/plan/launch — validate EnrichedManifest, spawn coordinator
+# ---------------------------------------------------------------------------
+
+
+class PlanLaunchRequest(BaseModel):
+    """Request body for POST /api/plan/launch.
+
+    ``yaml_text`` is the YAML-encoded :class:`~agentception.models.EnrichedManifest`
+    produced by the Cursor agent after processing a brain dump.  It must
+    validate against :class:`~agentception.models.EnrichedManifest`; any YAML
+    syntax error or schema mismatch returns 422 before the coordinator is
+    contacted.
+    """
+
+    yaml_text: str
+
+
+class PlanLaunchResponse(BaseModel):
+    """Response returned after the coordinator worktree has been spawned.
+
+    Fields mirror the return value of
+    :func:`agentception.mcp.plan_tools.plan_spawn_coordinator`.
+    """
+
+    worktree: str
+    branch: str
+    agent_task_path: str
+    batch_id: str
+
+
+def _detect_issue_cycle(phases: list[EnrichedPhase]) -> str | None:
+    """Return a human-readable cycle description if issue depends_on titles cycle.
+
+    Iterates across all phases and builds a global issue title → depends_on
+    mapping, then runs DFS to find any back-edge.  Returns ``None`` when the
+    graph is acyclic.
+
+    Note: Phase-level DAG validation (phases only depend on earlier phases) is
+    enforced by :class:`~agentception.models.PlanSpec`'s ``validate_phase_dag``
+    validator at model construction time, so we only need to check issue-level
+    cycles here.
+
+    Args:
+        phases: List of :class:`~agentception.models.EnrichedPhase` objects.
+
+    Returns:
+        ``None`` when acyclic; a non-empty cycle description string otherwise.
+    """
+    deps_map: dict[str, list[str]] = {}
+    for phase in phases:
+        for issue in phase.issues:
+            deps_map[issue.title] = list(issue.depends_on)
+
+    visited: set[str] = set()
+    in_stack: list[str] = []
+
+    def dfs(node: str) -> str | None:
+        if node in in_stack:
+            cycle_start = in_stack.index(node)
+            cycle_path = in_stack[cycle_start:] + [node]
+            return "Cycle detected: " + " → ".join(cycle_path)
+        if node in visited:
+            return None
+        visited.add(node)
+        in_stack.append(node)
+        for dep in deps_map.get(node, []):
+            result = dfs(dep)
+            if result is not None:
+                return result
+        in_stack.pop()
+        return None
+
+    for title in deps_map:
+        if title not in visited:
+            result = dfs(title)
+            if result is not None:
+                return result
+    return None
+
+
+@router.post("/launch")
+async def post_plan_launch(request: PlanLaunchRequest) -> PlanLaunchResponse:
+    """Validate an EnrichedManifest YAML, check for issue cycles, and spawn a coordinator.
+
+    Steps:
+    1. Parse ``yaml_text`` → dict (422 on YAML syntax error).
+    2. Validate as :class:`~agentception.models.EnrichedManifest` via Pydantic
+       (422 on field or phase-DAG errors).
+    3. Run issue-level cycle detection on the title-based ``depends_on`` graph
+       (422 if an issue cycle is found).
+    4. Await :func:`agentception.mcp.plan_tools.plan_spawn_coordinator` with
+       the manifest serialised as JSON.
+    5. Return :class:`PlanLaunchResponse` immediately.
+
+    Returns:
+        422 on YAML parse error, field validation error, or detected cycle.
+        500 if the coordinator spawn fails unexpectedly.
+        200 with :class:`PlanLaunchResponse` on success.
+    """
+    try:
+        raw: object = yaml.safe_load(request.yaml_text)
+    except yaml.YAMLError as exc:
+        detail = f"YAML parse error: {exc}"
+        logger.warning("⚠️ /api/plan/launch — %s", detail)
+        raise HTTPException(status_code=422, detail=detail)
+
+    if not isinstance(raw, dict):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Expected a YAML mapping at the top level, got {type(raw).__name__}",
+        )
+
+    try:
+        manifest = EnrichedManifest.model_validate(raw)
+    except Exception as exc:
+        logger.warning("⚠️ /api/plan/launch — EnrichedManifest validation failed: %s", exc)
+        raise HTTPException(status_code=422, detail=f"Manifest validation error: {exc}")
+
+    cycle = _detect_issue_cycle(manifest.phases)
+    if cycle is not None:
+        logger.warning("⚠️ /api/plan/launch — DAG cycle in issues: %s", cycle)
+        raise HTTPException(status_code=422, detail=cycle)
+
+    manifest_json: str = json.dumps(manifest.model_dump())
+
+    try:
+        result = await plan_spawn_coordinator(manifest_json)
+    except Exception as exc:
+        logger.error("❌ /api/plan/launch — coordinator spawn failed: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Coordinator spawn failed: {exc}",
+        )
+
+    if "error" in result:
+        raise HTTPException(status_code=422, detail=str(result["error"]))
+
+    logger.info(
+        "✅ /api/plan/launch — coordinator spawned; worktree=%s", result.get("worktree")
+    )
+
+    return PlanLaunchResponse(
+        worktree=str(result["worktree"]),
+        branch=str(result["branch"]),
+        agent_task_path=str(result["agent_task_path"]),
+        batch_id=str(result["batch_id"]),
     )
