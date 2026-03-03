@@ -23,6 +23,7 @@ from .github_ui import router as _github
 from .overview import router as _overview
 from .roles_ui import router as _roles_ui
 from .telemetry import router as _telemetry
+from .settings import router as _settings
 from .templates_ui import router as _templates_ui
 from .transcripts import router as _transcripts
 from .worktrees import router as _worktrees
@@ -46,4 +47,5 @@ router.include_router(_transcripts)
 router.include_router(_worktrees)
 router.include_router(_docs)
 router.include_router(_api_reference)
+router.include_router(_settings)
 router.include_router(_templates_ui)
