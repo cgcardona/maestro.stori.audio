@@ -200,12 +200,15 @@ async def detect_alerts(
     from agentception.readers.github import clear_wip_label
     stale_claims = await detect_stale_claims(github.wip_issues, settings.worktrees_dir)
     for claim in stale_claims:
+        # Always surface the stale claim in alerts so the UI shows it regardless
+        # of whether auto-heal succeeds.  The alert text is the same in both
+        # cases; auto-heal is best-effort and silent on success.
+        alerts.append(f"Stale claim on #{claim.issue_number}")
         try:
             await clear_wip_label(claim.issue_number)
             logger.info("✅ Auto-healed stale claim: removed agent:wip from #%d", claim.issue_number)
         except Exception as exc:
             logger.warning("⚠️  Auto-heal failed for #%d: %s", claim.issue_number, exc)
-            alerts.append(f"Stale claim on #{claim.issue_number}")
 
     # ── Alert 2: open PR labelled with a non-active agentception phase ──────
     active = github.active_label
