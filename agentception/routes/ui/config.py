@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+_DEFAULT_APPROVAL_LABELS: list[str] = ["db-schema", "security", "api-contract"]
+
 
 @router.get("/config", response_class=HTMLResponse)
 async def config_page(request: Request) -> HTMLResponse:
@@ -35,8 +37,11 @@ async def config_page(request: Request) -> HTMLResponse:
         config = await read_pipeline_config()
     except Exception:  # pragma: no cover — filesystem error path
         pass
+    approval_labels: list[str] = (
+        config.approval_required_labels if config is not None else _DEFAULT_APPROVAL_LABELS
+    )
     return _TEMPLATES.TemplateResponse(
         request,
         "config.html",
-        {"config": config},
+        {"config": config, "approval_required_labels": approval_labels},
     )

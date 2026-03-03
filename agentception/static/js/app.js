@@ -34,7 +34,7 @@ import { projectSwitcher } from './nav.js';
 import {
   pipelineDashboard, agentCard, phaseSwitcher, pipelineControl,
   sweepControl, waveControl, scalingAdvisor, prViolations,
-  staleClaimCard, issueCard,
+  staleClaimCard, issueCard, approvalCard,
 } from './overview.js';
 import { agentsPage, missionControl } from './agents.js';
 import { telemetryDash, waveTable } from './telemetry.js';
@@ -54,7 +54,7 @@ Object.assign(window, {
   projectSwitcher,
   pipelineDashboard, agentCard, phaseSwitcher, pipelineControl,
   sweepControl, waveControl, scalingAdvisor, prViolations,
-  staleClaimCard, issueCard,
+  staleClaimCard, issueCard, approvalCard,
   agentsPage, missionControl,
   telemetryDash, waveTable,
   dagVisualization,
