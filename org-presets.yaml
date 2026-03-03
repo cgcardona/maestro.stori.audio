@@ -1,0 +1,60 @@
+# Org Chart Presets — preset org configurations for the AgentCeption pipeline.
+#
+# Each preset defines a named org topology that can be selected from the
+# /org-chart page.  Selecting a preset writes the ``active_org`` key to
+# pipeline-config.json so the poller and spawn logic pick it up immediately.
+#
+# Fields:
+#   id          — machine-readable slug (used as the POST body value)
+#   name        — human-readable display name shown on the card
+#   description — one-sentence summary of when to use this preset
+#   roles       — ordered list of role slugs that make up this org
+#                 (slug must match entries in the role taxonomy YAML)
+#   tiers:
+#     leadership — CTO, VP-level agents; drive strategy and reviews
+#     workers    — hands-on implementers and QA agents
+
+presets:
+  - id: solo-cto
+    name: "Solo CTO"
+    description: "Minimal setup: a CTO directing a single python developer with a PR reviewer."
+    tiers:
+      leadership:
+        - cto
+      workers:
+        - python-developer
+        - pr-reviewer
+
+  - id: small-team
+    name: "Small Team"
+    description: "A focused squad: CTO + VP Engineering + VP QA managing three workers."
+    tiers:
+      leadership:
+        - cto
+        - vp-engineering
+        - vp-qa
+      workers:
+        - python-developer
+        - frontend-developer
+        - test-engineer
+
+  - id: full
+    name: "Full Org"
+    description: "Complete ten-slot org: full leadership tier with diverse specialist workers."
+    tiers:
+      leadership:
+        - cto
+        - vp-engineering
+        - vp-qa
+        - vp-product
+      workers:
+        - python-developer
+        - frontend-developer
+        - typescript-developer
+        - test-engineer
+        - pr-reviewer
+        - devops-engineer
+        - ml-engineer
+        - database-architect
+        - api-developer
+        - mobile-developer
