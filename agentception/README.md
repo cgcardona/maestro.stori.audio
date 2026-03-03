@@ -6,39 +6,132 @@ AgentCeption is a self-contained FastAPI + HTMX dashboard that turns any GitHub-
 
 ---
 
+## What AgentCeption Is
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  AgentCeption                                              │
+│                                                            │
+│  ┌──────────────────┐   ┌──────────────────────────────┐  │
+│  │  Web UI          │   │  MCP Server                  │  │
+│  │  (HTMX + SSE)    │   │  agentception/mcp/server.py  │  │
+│  │                  │   │                              │  │
+│  │  Plan / Build /  │   │  Tools Cursor calls:         │  │
+│  │  Ship pages      │   │  - plan_get_schema()         │  │
+│  └────────┬─────────┘   │  - plan_validate_spec()      │  │
+│           │             │  - plan_get_labels()         │  │
+│  ┌────────▼─────────┐   │  - plan_validate_manifest()  │  │
+│  │  FastAPI         │   │  - plan_spawn_coordinator()  │  │
+│  │  + GitHub Poller │   └──────────────────────────────┘  │
+│  └──────────────────┘                                      │
+│                                                            │
+│  GitHub is the single source of truth.                     │
+│  Cursor is the only inference engine.                      │
+│  AgentCeption has zero direct LLM calls.                   │
+└────────────────────────────────────────────────────────────┘
+```
+
+AgentCeption has exactly two external interfaces:
+
+| Interface | Protocol | Consumers |
+|-----------|----------|-----------|
+| Web dashboard | HTTP / SSE | Human operators (Plan/Build/Ship pages) |
+| MCP server | JSON-RPC 2.0 | Cursor — the only inference engine |
+
+**What AgentCeption is NOT:**
+- Not an LLM client — it never calls OpenRouter, Anthropic, or any model API directly.
+- Not a Cursor fork — it is a standalone Python service that Cursor talks to.
+- Not tightly coupled to Maestro — `agentception/` has zero imports from `maestro/`, `muse/`, `kly/`, or `storpheus/`.
+
+---
+
+## The Two Communication Channels
+
+### Channel 1 — Cursor → AgentCeption (MCP tool calls)
+
+Standard MCP JSON-RPC 2.0. Cursor is the client; AgentCeption is the server. Cursor calls a tool, AgentCeption responds with structured data. This is how Cursor gets the `PlanSpec` JSON schema, validates a spec, fetches GitHub labels, or triggers a coordinator spawn.
+
+```
+User: "Plan this idea: ..."
+  → Cursor LLM decides to call plan_get_schema()
+  → AgentCeption returns PlanSpec JSON schema
+  → Cursor LLM produces YAML using schema + codebase context
+  → Cursor calls plan_validate_spec(yaml_text)
+  → AgentCeption returns validation result (or errors)
+  → Cursor calls plan_spawn_coordinator(manifest_json)
+  → AgentCeption creates worktree + .agent-task → returns path
+```
+
+### Channel 2 — AgentCeption → Cursor (`.agent-task` file)
+
+When AgentCeption needs Cursor to perform LLM work on behalf of the web UI, it writes a `.agent-task` file into a git worktree. Cursor's background agent poll loop detects the file, runs its LLM with the task as context, and writes the result back (to a file, GitHub PR, etc.). AgentCeption's poller detects the output and SSE-pushes it to the browser.
+
+**The `.agent-task` file is the AgentCeption-to-Cursor IPC channel.** It is filesystem-based, not HTTP.
+
+```
+User fills "Plan" textarea in web UI → clicks "Generate"
+  → AgentCeption writes .agent-task (WORKFLOW=plan-spec, DUMP=..., OUTPUT_PATH=...)
+  → Cursor agent poll loop detects the file
+  → Cursor LLM generates YAML spec, writes to OUTPUT_PATH
+  → AgentCeption poller detects OUTPUT_PATH, reads YAML
+  → SSE pushes YAML to browser → user reviews and edits
+  → User clicks "Launch"
+  → AgentCeption calls plan_spawn_coordinator(manifest_json) internally
+  → New Cursor agent picks up the coordinator .agent-task
+```
+
+This means the brain dump can live entirely in the AgentCeption web UI — the user never has to open Cursor. Cursor does the inference in the background.
+
+---
+
 ## Architecture
 
 ```mermaid
 graph TD
-    subgraph AgentCeption Service
+    subgraph "Human operator"
+        BROWSER[Browser\nPlan / Build / Ship]
+    end
+
+    subgraph "Cursor (inference engine)"
+        CURSOR_LLM[Cursor LLM]
+        CURSOR_MCP[MCP Client]
+        CURSOR_POLL[Agent Poll Loop]
+    end
+
+    subgraph "AgentCeption Service"
         APP[FastAPI app\nagentception.app:app]
         POLLER[Background Poller\npoller.py]
-        SSE[SSE Stream\n/events]
+        SSE[SSE Stream /events]
         ROUTES[API Routes\nroutes/]
+        MCP_SRV[MCP Server\nmcp/server.py]
         INTEL[Intelligence\nintelligence/]
         READERS[Readers\nreaders/]
     end
 
-    subgraph External
-        GH[GitHub API\ngh CLI / REST]
-        WT[Git Worktrees\n~/.cursor/worktrees/]
-        CFG[pipeline-config.json\n.cursor/pipeline-config.json]
+    subgraph "External"
+        GH[GitHub API]
+        WT[Git Worktrees\n+ .agent-task files]
+        CFG[pipeline-config.json]
     end
 
-    subgraph Dashboard
-        UI[Browser\nHTMX + SSE]
-    end
-
+    BROWSER -->|HTTP/SSE| APP
     APP --> POLLER
     APP --> SSE
     APP --> ROUTES
+    APP --> MCP_SRV
     POLLER --> READERS
     READERS --> GH
     READERS --> WT
     READERS --> CFG
     INTEL --> GH
-    SSE --> UI
-    ROUTES --> UI
+    SSE --> BROWSER
+
+    CURSOR_MCP -->|JSON-RPC 2.0| MCP_SRV
+    CURSOR_LLM --> CURSOR_MCP
+    CURSOR_POLL -->|reads| WT
+    CURSOR_POLL -->|writes result| WT
+    POLLER -->|detects result| WT
+    ROUTES -->|writes| WT
 ```
 
 **Key design choices:**
@@ -47,6 +140,7 @@ graph TD
 - **Reader layer** — `readers/` modules are pure async functions that fetch data from GitHub, the filesystem, and config files. They never mutate state.
 - **Intelligence layer** — `intelligence/` modules analyse the pipeline state to surface A/B test results, DAG ordering, scaling recommendations, and guard-rail violations.
 - **Config-first multi-repo** — switch the monitored repository by editing `pipeline-config.json`; no code changes needed.
+- **MCP-native planning** — the Plan step never calls an LLM directly. It provides context (schema, labels, validation) to Cursor via MCP tools. Cursor's LLM does the reasoning.
 
 ---
 
