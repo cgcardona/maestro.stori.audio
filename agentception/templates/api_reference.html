@@ -147,8 +147,8 @@
         x-data="apiEndpoint()"
         data-method="{{ ep.method }}"
         data-path="{{ ep.path }}"
-        data-query-params="{{ ep.parameters | selectattr('in', 'equalto', 'query') | list | tojson }}"
-        data-body-fields="{{ ep.request_body.fields | tojson if ep.request_body else '[]' }}"
+        data-query-params='{{ ep.parameters | selectattr("in", "equalto", "query") | list | tojson }}'
+        data-body-fields='{{ ep.request_body.fields | tojson if ep.request_body else "[]" }}'
       >
 
         {# ── Collapsed row ──────────────────────────────────────────────── #}
