@@ -1,109 +1,214 @@
 {% extends "base.html" %}
 
-{% block title %}Cognitive Architecture — AgentCeption{% endblock %}
+{% block title %}Cognitive Architecture Studio — AgentCeption{% endblock %}
 
 {% block head %}
-{# Monaco AMD loader — only needed on this page, not global #}
+{# Monaco AMD loader — CDN, loaded only on this page #}
 <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs/loader.js"></script>
 {% endblock %}
 
 {% block content %}
+{#
+  Cognitive Architecture Studio
+  ─────────────────────────────
+  Structure:   Jinja → HTMX → Alpine
+  Layout:      3-column grid (org tree | role detail | monaco editor)
+  Interaction: org tree = Jinja + Alpine search/active state
+               center panel = HTMX partial on role click
+               editor = Alpine component, lazy-loaded on explicit user action
+
+  Performance note:
+    The editor does NOT auto-load on role click. User must click "View/Edit Prompt"
+    to trigger Monaco. This eliminates the freeze caused by setValue() blocking
+    the browser thread on every HTMX swap.
+#}
+
 {% if error %}
-<div class="alert-banner" role="alert" style="margin-bottom:0.75rem">⚠️ {{ error }}</div>
+<div class="alert-banner" role="alert">⚠️ {{ error }}</div>
 {% endif %}
 
-<div class="ca-layout">
+{# ── Pre-compute role counts (Jinja namespace) ────────────────────────────── #}
+{% set rc = namespace(total=0, spawnable=0) %}
+{% if taxonomy %}
+  {% for level in taxonomy.levels %}
+    {% for role in level.roles %}
+      {% set rc.total = rc.total + 1 %}
+      {% if role.spawnable %}{% set rc.spawnable = rc.spawnable + 1 %}{% endif %}
+    {% endfor %}
+  {% endfor %}
+{% endif %}
 
-  {# ── Panel 1: Org Hierarchy — fully server-rendered ─────────────────────── #}
-  <div class="ca-panel" id="panel-org" x-data="{ activeSlug: '' }">
-    <div class="ca-panel__header">Org Hierarchy</div>
-    <div class="ca-panel__body">
+{# ── Page header ──────────────────────────────────────────────────────────── #}
+<div class="cas-page-header">
+  <div>
+    <h1 class="cas-page-title">Cognitive Architecture Studio</h1>
+    <p class="cas-page-subtitle">Browse the org hierarchy, compose cognitive architectures, and edit role prompts.</p>
+  </div>
+  {% if taxonomy %}
+  <div class="cas-page-stats">
+    <span class="cas-stat"><strong>{{ rc.total }}</strong> roles</span>
+    <span class="cas-stat"><strong>{{ rc.spawnable }}</strong> spawnable</span>
+    <span class="cas-stat"><strong>{{ taxonomy.levels | length }}</strong> tiers</span>
+  </div>
+  {% endif %}
+</div>
+
+{# ── 3-column studio layout ────────────────────────────────────────────────── #}
+<div class="cas-layout">
+
+  {# ── Panel 1: Org Hierarchy (pure Jinja, Alpine for search + active state) ── #}
+  <div
+    class="cas-panel cas-panel--org"
+    x-data="{
+      activeSlug: '',
+      search: '',
+      get filteredRoles() {
+        if (!this.search) return null;
+        const q = this.search.toLowerCase();
+        return document.querySelectorAll('.cas-org-role');
+      }
+    }"
+  >
+    <div class="cas-panel__header">
+      <span>Org Hierarchy</span>
+      <span class="cas-panel__count">{{ rc.total }}</span>
+    </div>
+
+    <div class="cas-org-search-wrap">
+      <input
+        class="cas-org-search"
+        type="search"
+        placeholder="Filter roles…"
+        x-model="search"
+        autocomplete="off"
+        spellcheck="false"
+      >
+    </div>
+
+    <div class="cas-panel__body">
       {% if not taxonomy %}
-      <p style="color:var(--color-muted,#888);font-size:0.8rem;padding:0.5rem">Taxonomy unavailable.</p>
+      <p class="cas-empty">Taxonomy unavailable.</p>
       {% else %}
         {% for level in taxonomy.levels %}
-        <div class="org-level">
-          <div class="org-level__title">{{ level.label }}</div>
+        <div class="cas-org-level">
+          <div class="cas-org-level__title">{{ level.label }}</div>
           {% for role in level.roles %}
-          <div
-            class="org-role-row{% if role.spawnable %} spawnable-role{% endif %}"
-            :class="activeSlug === '{{ role.slug }}' ? 'active' : ''"
-            role="button"
-            tabindex="0"
+          <button
+            class="cas-org-role{% if role.spawnable %} cas-org-role--spawnable{% elif role.file_exists %} cas-org-role--exists{% endif %}"
+            :class="activeSlug === '{{ role.slug }}' && 'cas-org-role--active'"
+            x-show="!search || '{{ role.label | lower }}'.includes(search.toLowerCase())"
             @click="activeSlug = '{{ role.slug }}'"
             @keydown.enter="activeSlug = '{{ role.slug }}'"
-            @keydown.space.prevent="activeSlug = '{{ role.slug }}'"
             hx-get="/roles/{{ role.slug }}/detail"
-            hx-target="#role-detail-panel"
+            hx-target="#cas-detail-panel"
             hx-swap="innerHTML"
+            hx-indicator="#cas-loading"
+            type="button"
+            title="{{ role.description }}"
           >
-            <span class="org-role-dot{% if role.spawnable %} spawnable{% elif role.file_exists %} exists{% endif %}"></span>
-            <span class="org-role-label">{{ role.label }}</span>
-            {% if role.spawnable %}<span class="org-role-badge">leaf</span>{% endif %}
-          </div>
+            <span class="cas-org-role__dot"></span>
+            <span class="cas-org-role__label">{{ role.label }}</span>
+            {% if role.spawnable %}
+            <span class="cas-org-role__badge">leaf</span>
+            {% endif %}
+          </button>
           {% endfor %}
         </div>
         {% endfor %}
       {% endif %}
     </div>
-    <div class="ca-legend">
-      <span class="ca-legend-item"><span class="ca-legend-dot" style="background:#4caf50"></span>File exists</span>
-      <span class="ca-legend-item"><span class="ca-legend-dot" style="background:#7c6af7"></span>Spawnable</span>
-      <span class="ca-legend-item"><span class="ca-legend-dot" style="background:#555"></span>Draft</span>
+
+    <div class="cas-panel__legend">
+      <span class="cas-legend-item">
+        <span class="cas-legend-dot cas-legend-dot--spawnable"></span>Spawnable
+      </span>
+      <span class="cas-legend-item">
+        <span class="cas-legend-dot cas-legend-dot--exists"></span>File exists
+      </span>
+      <span class="cas-legend-item">
+        <span class="cas-legend-dot cas-legend-dot--draft"></span>Draft
+      </span>
     </div>
   </div>
 
-  {# ── Panel 2: Role Detail — replaced by HTMX on role click ─────────────── #}
-  <div class="ca-panel center-panel" id="role-detail-panel">
-    <div class="center-role-placeholder">
-      ← Select a role to explore personas and compose a cognitive architecture
+  {# ── Panel 2: Role Detail — HTMX target, replaced on role click ───────────── #}
+  <div class="cas-panel cas-panel--detail" id="cas-detail-panel">
+    <div class="cas-placeholder">
+      <div class="cas-placeholder__icon">⬡</div>
+      <div class="cas-placeholder__text">Select a role to explore personas and compose a cognitive architecture</div>
     </div>
   </div>
 
-  {# ── Panel 3: Monaco editor ─────────────────────────────────────────────── #}
+  {# HTMX loading indicator — shown while detail is fetching #}
+  <div id="cas-loading" class="cas-loading htmx-indicator">Loading…</div>
+
+  {# ── Panel 3: Monaco Prompt Editor ────────────────────────────────────────── #}
   <div
-    class="ca-panel editor-outer"
-    id="panel-editor"
+    class="cas-panel cas-panel--editor"
     x-data="rolesEditor()"
     x-init="init()"
-    @role:selected.window="loadRole($event.detail.slug)"
+    @role-load.window="loadRole($event.detail.slug)"
   >
-    <div class="editor-header">
-      <span class="editor-breadcrumb" x-text="breadcrumb"></span>
-      <button :disabled="!canDiff" @click="previewDiff()">Preview Diff</button>
-      <button class="btn-save" :disabled="!canSave" @click="saveRole()">Save</button>
+    <div class="cas-editor-header">
+      <span class="cas-editor-breadcrumb" x-text="breadcrumb"></span>
+      <button
+        class="btn btn-secondary"
+        :disabled="!canDiff"
+        @click="previewDiff()"
+        x-show="currentSlug"
+        x-cloak
+      >Diff</button>
+      <button
+        class="btn btn-primary"
+        :disabled="!canSave"
+        @click="saveRole()"
+        x-show="currentSlug"
+        x-cloak
+      >Save</button>
     </div>
-    <div id="editor-container" style="position:relative;flex:1 1 0;overflow:hidden;">
-      <div class="editor-placeholder" x-ref="editorPlaceholder">Select a role to begin editing.</div>
+
+    <div class="cas-editor-body" id="cas-editor-container">
+      <div class="cas-editor-placeholder" x-ref="editorPlaceholder">
+        <div class="cas-placeholder__icon">✏️</div>
+        <div class="cas-placeholder__text">Click "View / Edit Prompt" on any role to open its prompt file here.</div>
+      </div>
       <div x-ref="editorContainer" style="width:100%;height:100%;"></div>
     </div>
-    <div class="editor-status" :class="statusClass" x-text="status" aria-live="polite"></div>
 
-    {# Diff modal lives in the editor scope so it shares Alpine state #}
     <div
-      class="diff-modal-overlay"
-      :class="diffVisible ? 'visible' : ''"
+      class="cas-editor-status"
+      :class="statusClass"
+      x-text="status || '\u00a0'"
+      aria-live="polite"
+    ></div>
+
+    {# ── Diff modal ──────────────────────────────────────────────────────────── #}
+    <div
+      class="cas-diff-overlay"
+      :class="diffVisible && 'cas-diff-overlay--visible'"
       role="dialog"
       aria-modal="true"
       aria-label="Diff preview"
       @click.self="diffVisible = false"
+      x-cloak
     >
-      <div class="diff-modal">
-        <div class="diff-modal__header">
+      <div class="cas-diff-modal">
+        <div class="cas-diff-modal__header">
           <span x-text="diffTitle">Diff preview</span>
+          <button @click="diffVisible = false" aria-label="Close diff">✕</button>
         </div>
-        <div class="diff-modal__body">
+        <div class="cas-diff-modal__body">
           <template x-if="diffLines.length === 0">
-            <span class="diff-empty">Loading…</span>
+            <span class="cas-diff-empty">Loading…</span>
           </template>
           <template x-for="(line, i) in diffLines" :key="i">
             <div :class="line.cls" x-text="line.text"></div>
           </template>
         </div>
-        <div class="diff-modal__footer">
-          <button @click="diffVisible = false">Cancel</button>
+        <div class="cas-diff-modal__footer">
+          <button class="btn btn-secondary" @click="diffVisible = false">Cancel</button>
           <button
-            class="btn-commit"
+            class="btn btn-primary"
             :disabled="!diffCommitReady || diffCommitting"
             @click="saveAndCommit()"
             x-text="diffCommitting ? 'Committing…' : 'Save & Commit'"
@@ -111,7 +216,9 @@
         </div>
       </div>
     </div>
-  </div>
 
-</div>{# /.ca-layout #}
+  </div>{# /.cas-panel--editor #}
+
+</div>{# /.cas-layout #}
+
 {% endblock %}

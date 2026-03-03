@@ -1157,18 +1157,24 @@ function transcriptDetail() {
   };
 }
 
-// ── Cognitive Architecture Studio ────────────────────────────────────────────
+// ═══ Cognitive Architecture Studio ══════════════════════════════════════════
 //
-// roleDetail(slug, fileExists, personas)
-//   Alpine component for the center panel (loaded via HTMX partial).
-//   Manages tab state, persona selection, composer form, and dispatches
-//   the `role:selected` window event so rolesEditor() loads the file.
+// roleDetail(slug, fileExists, personasJson)
+//   Alpine component for the center panel (HTMX partial: _role_detail.html).
+//   Manages: tab state, persona selection + apply-to-composer, composer form,
+//   and the "View / Edit Prompt" button that explicitly wakes the Monaco editor.
+//
+//   Performance note: init() does NOT auto-dispatch `role-load`. The freeze
+//   on role click was caused by Monaco.setValue() running synchronously on
+//   every HTMX swap. Now the user must click "View / Edit Prompt" to load
+//   the editor — making it deliberate and non-blocking.
 //
 // rolesEditor()
-//   Alpine component for the right panel (Monaco editor).
-//   Initialises Monaco once, listens for `role:selected`, handles
-//   save / diff / commit.
-// ----------------------------------------------------------------------------
+//   Alpine component for the right panel (Monaco editor, roles.html).
+//   Initialises Monaco lazily on the first `role-load` window event.
+//   Uses a debounced ResizeObserver instead of automaticLayout to avoid
+//   continuous layout thrashing.
+// ─────────────────────────────────────────────────────────────────────────────
 
 function roleDetail(slug, fileExists, personas) {
   return {
@@ -1183,9 +1189,12 @@ function roleDetail(slug, fileExists, personas) {
     copied: false,
 
     init() {
-      if (this.fileExists) {
-        window.dispatchEvent(new CustomEvent('role:selected', { detail: { slug: this.slug } }));
-      }
+      // No auto-dispatch here — deliberate. See performance note above.
+    },
+
+    // Called by the "View / Edit Prompt" button in _role_detail.html.
+    loadInEditor() {
+      window.dispatchEvent(new CustomEvent('role-load', { detail: { slug: this.slug } }));
     },
 
     get archPreview() {
@@ -1193,10 +1202,6 @@ function roleDetail(slug, fileExists, personas) {
       if (this.figure) parts.push(this.figure);
       for (const s of this.skills) parts.push(s);
       return parts.length ? `COGNITIVE_ARCH=${parts.join(':')}` : '(select a figure or skill)';
-    },
-
-    selectPersona(id) {
-      this.selectedPersonaId = id;
     },
 
     applyPersona(id) {
@@ -1209,7 +1214,11 @@ function roleDetail(slug, fileExists, personas) {
     },
 
     async copyArchString() {
-      await navigator.clipboard.writeText(this.archPreview);
+      try {
+        await navigator.clipboard.writeText(this.archPreview);
+      } catch (_) {
+        // Clipboard API may be unavailable in non-secure context.
+      }
       this.copied = true;
       setTimeout(() => { this.copied = false; }, 1500);
     },
@@ -1225,11 +1234,13 @@ function roleDetail(slug, fileExists, personas) {
 function rolesEditor() {
   return {
     editor: null,
+    _monacoReady: false,
+    _pendingSlug: null,
     currentSlug: null,
     currentPath: null,
     status: '',
     statusClass: '',
-    breadcrumb: '← select a role to edit',
+    breadcrumb: '← click "View / Edit Prompt" to open a file',
     canSave: false,
     canDiff: false,
     diffVisible: false,
@@ -1239,50 +1250,79 @@ function rolesEditor() {
     diffCommitting: false,
 
     init() {
-      // Guard against Alpine re-running x-init (e.g. after HTMX swaps nearby DOM).
-      // Monaco throws "Element already has context attribute" if create() is called
-      // on a container that already owns an editor instance.
-      if (this.editor) return;
+      // Guard: Alpine may re-run x-init after nearby HTMX swaps.
+      if (this._monacoReady) return;
 
-      // Monaco AMD loader is added to this page only — configure CDN path and boot
+      // Boot Monaco AMD loader (script tag already in <head> of roles.html).
       require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs' } });
       require(['vs/editor/editor.main'], () => {
-        // Second guard: the AMD callback can fire more than once if the module
-        // was already cached by a previous require() call.
-        if (this.editor) return;
+        if (this.editor) return; // Cached AMD callback guard.
+
         if (this.$refs.editorPlaceholder) this.$refs.editorPlaceholder.style.display = 'none';
+
         this.editor = monaco.editor.create(this.$refs.editorContainer, {
           value: '',
           language: 'markdown',
           theme: 'vs-dark',
-          automaticLayout: true,
+          automaticLayout: false, // Managed manually to avoid layout thrashing.
           minimap: { enabled: false },
           wordWrap: 'on',
           scrollBeyondLastLine: false,
           readOnly: true,
         });
+
+        // Debounced ResizeObserver — fires editor.layout() at most once per 100ms.
+        let _resizeTimer = null;
+        const ro = new ResizeObserver(() => {
+          clearTimeout(_resizeTimer);
+          _resizeTimer = setTimeout(() => this.editor && this.editor.layout(), 100);
+        });
+        ro.observe(this.$refs.editorContainer);
+
+        this._monacoReady = true;
+
+        // If a slug was requested before Monaco was ready, load it now.
+        if (this._pendingSlug) {
+          this._doLoad(this._pendingSlug);
+          this._pendingSlug = null;
+        }
       });
     },
 
     async loadRole(slug) {
-      if (!this.editor) {
-        this.setStatus('Monaco loading — try again in a moment.', 'err');
+      // Called by the `role-load` window event listener (@role-load.window).
+      if (!this._monacoReady) {
+        // Monaco still booting — queue the slug and load once ready.
+        this._pendingSlug = slug;
+        this.setStatus('Monaco loading…', '');
         return;
       }
+      await this._doLoad(slug);
+    },
+
+    async _doLoad(slug) {
+      if (!this.editor) return;
       const path = `.cursor/roles/${slug}.md`;
-      this.setStatus(`Loading ${path}…`);
+      this.setStatus(`Loading ${path}…`, '');
       try {
         const r = await fetch(`/api/roles/${encodeURIComponent(slug)}`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const data = await r.json();
-        this.editor.setValue(data.content);
-        this.editor.updateOptions({ readOnly: false });
-        this.currentSlug = slug;
-        this.currentPath = path;
-        this.breadcrumb = path;
-        this.canSave = true;
-        this.canDiff = true;
-        this.setStatus(`Loaded ${data.meta.line_count} lines · ${data.meta.last_commit_message || '(uncommitted)'}`, 'ok');
+
+        // Use requestAnimationFrame so the browser can paint the loading status
+        // before Monaco's synchronous setValue() blocks the thread.
+        requestAnimationFrame(() => {
+          this.editor.setValue(data.content);
+          this.editor.updateOptions({ readOnly: false });
+          this.editor.layout();
+          this.currentSlug = slug;
+          this.currentPath = path;
+          this.breadcrumb = path;
+          this.canSave = true;
+          this.canDiff = true;
+          const msg = data.meta.last_commit_message || '(uncommitted)';
+          this.setStatus(`${data.meta.line_count} lines · ${msg}`, 'ok');
+        });
       } catch (err) {
         this.setStatus(`Failed to load: ${err.message}`, 'err');
       }
@@ -1291,7 +1331,7 @@ function rolesEditor() {
     async saveRole() {
       if (!this.editor || !this.currentSlug) return;
       this.canSave = false;
-      this.setStatus('Saving…');
+      this.setStatus('Saving…', '');
       try {
         const r = await fetch(`/api/roles/${encodeURIComponent(this.currentSlug)}`, {
           method: 'PUT',
@@ -1301,7 +1341,8 @@ function rolesEditor() {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const data = await r.json();
         this.canSave = true;
-        this.setStatus(`✅ Saved — diff: ${data.diff ? data.diff.split('\n').length : 0} line(s).`, 'ok');
+        const lines = data.diff ? data.diff.split('\n').length : 0;
+        this.setStatus(`✅ Saved — ${lines} line(s) changed`, 'ok');
       } catch (err) {
         this.canSave = true;
         this.setStatus(`Save failed: ${err.message}`, 'err');
@@ -1325,19 +1366,19 @@ function rolesEditor() {
         this.diffLines = this._parseDiff(data.diff);
         this.diffCommitReady = true;
       } catch (err) {
-        this.diffLines = [{ cls: 'diff-empty', text: `Failed: ${err.message}` }];
+        this.diffLines = [{ cls: 'cas-diff-empty', text: `Failed: ${err.message}` }];
       }
     },
 
     _parseDiff(diff) {
       if (!diff || !diff.trim()) {
-        return [{ cls: 'diff-empty', text: 'No changes — content is identical to HEAD.' }];
+        return [{ cls: 'cas-diff-empty', text: 'No changes — content is identical to HEAD.' }];
       }
       return diff.split('\n').map(line => {
-        let cls = 'diff-line';
-        if (line.startsWith('+') && !line.startsWith('+++')) cls += ' added';
-        else if (line.startsWith('-') && !line.startsWith('---')) cls += ' removed';
-        else if (line.startsWith('@@')) cls += ' hunk';
+        let cls = 'cas-diff-line';
+        if (line.startsWith('+') && !line.startsWith('+++')) cls += ' cas-diff-line--added';
+        else if (line.startsWith('-') && !line.startsWith('---')) cls += ' cas-diff-line--removed';
+        else if (line.startsWith('@@')) cls += ' cas-diff-line--hunk';
         return { cls, text: line };
       });
     },
