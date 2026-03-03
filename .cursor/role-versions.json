@@ -19,6 +19,106 @@
           "timestamp": 1772481061
         }
       ]
+    },
+    "rust-developer": {
+      "current": "v1",
+      "history": [
+        {
+          "sha": "initial",
+          "label": "v1",
+          "timestamp": 1772553483
+        }
+      ]
+    },
+    "go-developer": {
+      "current": "v1",
+      "history": [
+        {
+          "sha": "initial",
+          "label": "v1",
+          "timestamp": 1772553483
+        }
+      ]
+    },
+    "typescript-developer": {
+      "current": "v1",
+      "history": [
+        {
+          "sha": "initial",
+          "label": "v1",
+          "timestamp": 1772553483
+        }
+      ]
+    },
+    "ios-developer": {
+      "current": "v1",
+      "history": [
+        {
+          "sha": "initial",
+          "label": "v1",
+          "timestamp": 1772553483
+        }
+      ]
+    },
+    "android-developer": {
+      "current": "v1",
+      "history": [
+        {
+          "sha": "initial",
+          "label": "v1",
+          "timestamp": 1772553483
+        }
+      ]
+    },
+    "rails-developer": {
+      "current": "v1",
+      "history": [
+        {
+          "sha": "initial",
+          "label": "v1",
+          "timestamp": 1772553483
+        }
+      ]
+    },
+    "react-developer": {
+      "current": "v1",
+      "history": [
+        {
+          "sha": "initial",
+          "label": "v1",
+          "timestamp": 1772553483
+        }
+      ]
+    },
+    "site-reliability-engineer": {
+      "current": "v1",
+      "history": [
+        {
+          "sha": "initial",
+          "label": "v1",
+          "timestamp": 1772553483
+        }
+      ]
+    },
+    "ml-researcher": {
+      "current": "v1",
+      "history": [
+        {
+          "sha": "initial",
+          "label": "v1",
+          "timestamp": 1772553483
+        }
+      ]
+    },
+    "data-scientist": {
+      "current": "v1",
+      "history": [
+        {
+          "sha": "initial",
+          "label": "v1",
+          "timestamp": 1772553483
+        }
+      ]
     }
   },
   "ab_mode": {

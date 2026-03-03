@@ -44,7 +44,7 @@ levels:
         compatible_skill_domains:
           - llm
           - python
-        file_exists: false
+        file_exists: true
 
       - slug: cto
         label: "CTO"
@@ -99,7 +99,7 @@ levels:
         compatible_skill_domains:
           - llm
           - javascript
-        file_exists: false
+        file_exists: true
 
       - slug: cfo
         label: "CFO"
@@ -117,7 +117,7 @@ levels:
         compatible_skill_domains:
           - python
           - postgresql
-        file_exists: false
+        file_exists: true
 
       - slug: ciso
         label: "CISO"
@@ -139,7 +139,7 @@ levels:
           - devops
           - python
           - postgresql
-        file_exists: false
+        file_exists: true
 
       - slug: cdo
         label: "CDO"
@@ -159,7 +159,7 @@ levels:
           - postgresql
           - python
           - llm
-        file_exists: false
+        file_exists: true
 
       - slug: cmo
         label: "CMO"
@@ -177,7 +177,7 @@ levels:
         compatible_skill_domains:
           - javascript
           - llm
-        file_exists: false
+        file_exists: true
 
       - slug: coo
         label: "COO"
@@ -197,7 +197,7 @@ levels:
           - python
           - devops
           - postgresql
-        file_exists: false
+        file_exists: true
 
   - id: vp
     label: "VP Level"
@@ -269,7 +269,7 @@ levels:
           - llm
           - javascript
           - htmx
-        file_exists: false
+        file_exists: true
 
       - slug: vp-design
         label: "VP Design"
@@ -289,7 +289,7 @@ levels:
           - alpine
           - htmx
           - jinja2
-        file_exists: false
+        file_exists: true
 
       - slug: vp-data
         label: "VP Data"
@@ -310,7 +310,7 @@ levels:
           - postgresql
           - python
           - llm
-        file_exists: false
+        file_exists: true
 
       - slug: vp-security
         label: "VP Security"
@@ -332,7 +332,7 @@ levels:
           - devops
           - python
           - postgresql
-        file_exists: false
+        file_exists: true
 
       - slug: vp-infrastructure
         label: "VP Infrastructure"
@@ -352,7 +352,7 @@ levels:
           - devops
           - python
           - postgresql
-        file_exists: false
+        file_exists: true
 
       - slug: vp-mobile
         label: "VP Mobile"
@@ -370,7 +370,7 @@ levels:
         compatible_skill_domains:
           - javascript
           - devops
-        file_exists: false
+        file_exists: true
 
       - slug: vp-platform
         label: "VP Platform"
@@ -396,7 +396,7 @@ levels:
           - python
           - postgresql
           - devops
-        file_exists: false
+        file_exists: true
 
       - slug: vp-ml
         label: "VP ML/AI"
@@ -419,7 +419,7 @@ levels:
           - python
           - llm
           - postgresql
-        file_exists: false
+        file_exists: true
 
   - id: worker
     label: "Workers"
@@ -513,7 +513,7 @@ levels:
           - jinja2
           - javascript
           - d3
-        file_exists: false
+        file_exists: true
 
       - slug: full-stack-developer
         label: "Full-Stack Developer"
@@ -536,7 +536,7 @@ levels:
           - alpine
           - jinja2
           - postgresql
-        file_exists: false
+        file_exists: true
 
       - slug: mobile-developer
         label: "Mobile Developer"
@@ -557,7 +557,7 @@ levels:
           - swift_ui
           - javascript
           - devops
-        file_exists: false
+        file_exists: true
 
       - slug: systems-programmer
         label: "Systems Programmer"
@@ -583,7 +583,7 @@ levels:
           - cpp
           - python
           - devops
-        file_exists: false
+        file_exists: true
 
       - slug: ml-engineer
         label: "ML Engineer"
@@ -607,7 +607,7 @@ levels:
           - llm
           - pytorch
           - postgresql
-        file_exists: false
+        file_exists: true
 
       - slug: data-engineer
         label: "Data Engineer"
@@ -628,7 +628,7 @@ levels:
           - fastapi
           - kafka
           - sql
-        file_exists: false
+        file_exists: true
 
       - slug: devops-engineer
         label: "DevOps Engineer"
@@ -652,7 +652,7 @@ levels:
           - aws
           - python
           - postgresql
-        file_exists: false
+        file_exists: true
 
       - slug: security-engineer
         label: "Security Engineer"
@@ -676,7 +676,7 @@ levels:
           - postgresql
           - application_security
           - cryptography
-        file_exists: false
+        file_exists: true
 
       - slug: test-engineer
         label: "Test Engineer"
@@ -698,7 +698,7 @@ levels:
           - postgresql
           - htmx
           - testing
-        file_exists: false
+        file_exists: true
 
       - slug: architect
         label: "Architect"
@@ -731,7 +731,7 @@ levels:
           - llm
           - blockchain
           - cryptography
-        file_exists: false
+        file_exists: true
 
       - slug: api-developer
         label: "API Developer"
@@ -757,7 +757,7 @@ levels:
           - javascript
           - graphql
           - blockchain
-        file_exists: false
+        file_exists: true
 
       - slug: technical-writer
         label: "Technical Writer"
@@ -778,7 +778,7 @@ levels:
           - python
           - llm
           - jinja2
-        file_exists: false
+        file_exists: true
 
       # ── New Worker Roles ──────────────────────────────────────────────────────
 
@@ -805,7 +805,7 @@ levels:
           - cpp
           - devops
           - blockchain
-        file_exists: false
+        file_exists: true
 
       - slug: go-developer
         label: "Go Developer"
@@ -824,7 +824,7 @@ levels:
           - devops
           - postgresql
           - python
-        file_exists: false
+        file_exists: true
 
       - slug: typescript-developer
         label: "TypeScript Developer"
@@ -845,7 +845,7 @@ levels:
           - react
           - nextjs
           - nodejs
-        file_exists: false
+        file_exists: true
 
       - slug: ios-developer
         label: "iOS / macOS Developer"
@@ -864,7 +864,7 @@ levels:
           - swift
           - swift_ui
           - devops
-        file_exists: false
+        file_exists: true
 
       - slug: android-developer
         label: "Android Developer"
@@ -882,7 +882,7 @@ levels:
           - kotlin
           - java
           - devops
-        file_exists: false
+        file_exists: true
 
       - slug: rails-developer
         label: "Rails Developer"
@@ -901,7 +901,7 @@ levels:
           - ruby
           - postgresql
           - javascript
-        file_exists: false
+        file_exists: true
 
       - slug: react-developer
         label: "React Developer"
@@ -921,7 +921,7 @@ levels:
           - typescript
           - javascript
           - nextjs
-        file_exists: false
+        file_exists: true
 
       - slug: site-reliability-engineer
         label: "Site Reliability Engineer"
@@ -944,7 +944,7 @@ levels:
           - python
           - postgresql
           - aws
-        file_exists: false
+        file_exists: true
 
       - slug: ml-researcher
         label: "ML Researcher"
@@ -972,7 +972,7 @@ levels:
           - llm
           - postgresql
           - cryptography
-        file_exists: false
+        file_exists: true
 
       - slug: data-scientist
         label: "Data Scientist"
@@ -996,4 +996,4 @@ levels:
           - sql
           - pytorch
           - llm
-        file_exists: false
+        file_exists: true
