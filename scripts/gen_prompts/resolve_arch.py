@@ -306,22 +306,31 @@ def render_fingerprint(
 
     This is the single source of truth for fingerprint format. All agents call
     this and embed the output verbatim — same block, same format, everywhere.
-    Pass started_at (ISO-8601 string) to include a Started at row (reviewer context).
 
-    Rows: Architecture (normalized) · Session · Batch · Wave (CTO).
-    Skills and Role are omitted — both are redundant with the Architecture string.
-    VP label is replaced by Batch showing just the batch ID.
+    Every fingerprint shows the full three-tier chain:
+      Role + Architecture (who the agent is)
+      CTO Wave (which wave the CTO dispatched)
+      VP Batch (which batch the VP assembled)
+      VP (which VP identity spawned this agent)
+      Timestamp (when this fingerprint was written — always present)
+
+    Pass started_at (ISO-8601 string) to use a specific timestamp; otherwise
+    the current UTC time is used so every fingerprint always carries a timestamp.
     """
+    import datetime as _dt
+
     arch_display = _normalize_arch_display(arch)
+    timestamp = started_at if started_at else _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     rows = [
+        f"| **Role** | `{role}` |",
         f"| **Architecture** | `{arch_display}` |",
         f"| **Session** | `{session}` |",
-        f"| **Batch** | `{batch}` |",
-        f"| **Wave (CTO)** | `{wave}` |",
+        f"| **CTO Wave** | `{wave}` |",
+        f"| **VP Batch** | `{batch}` |",
+        f"| **VP** | `{vp}` |",
+        f"| **Timestamp** | `{timestamp}` |",
     ]
-    if started_at:
-        rows.append(f"| **Started at** | `{started_at}` |")
 
     lines = [
         "<details>",
