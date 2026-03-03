@@ -249,7 +249,7 @@ def test_ab_page_returns_200(client: TestClient) -> None:
     )
 
     with patch(
-        "agentception.routes.ui.compute_ab_results",
+        "agentception.routes.ui.ab_testing.compute_ab_results",
         new=AsyncMock(return_value=(mock_a, mock_b)),
     ):
         response = client.get("/ab-testing")
