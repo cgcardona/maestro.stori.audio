@@ -1234,7 +1234,8 @@ function roleDetail(slug, fileExists, personas) {
 function rolesEditor() {
   return {
     editor: null,
-    _monacoReady: false,
+    _monacoBooted: false,  // true once _bootMonaco() has been called
+    _monacoReady: false,   // true once monaco.editor.create() has returned
     _pendingSlug: null,
     currentSlug: null,
     currentPath: null,
@@ -1249,55 +1250,69 @@ function rolesEditor() {
     diffCommitReady: false,
     diffCommitting: false,
 
-    init() {
-      // Guard: Alpine may re-run x-init after nearby HTMX swaps.
-      if (this._monacoReady) return;
-
-      // Boot Monaco AMD loader (script tag already in <head> of roles.html).
-      require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs' } });
-      require(['vs/editor/editor.main'], () => {
-        if (this.editor) return; // Cached AMD callback guard.
-
-        if (this.$refs.editorPlaceholder) this.$refs.editorPlaceholder.style.display = 'none';
-
-        this.editor = monaco.editor.create(this.$refs.editorContainer, {
-          value: '',
-          language: 'markdown',
-          theme: 'vs-dark',
-          automaticLayout: false, // Managed manually to avoid layout thrashing.
-          minimap: { enabled: false },
-          wordWrap: 'on',
-          scrollBeyondLastLine: false,
-          readOnly: true,
-        });
-
-        // Debounced ResizeObserver — fires editor.layout() at most once per 100ms.
-        let _resizeTimer = null;
-        const ro = new ResizeObserver(() => {
-          clearTimeout(_resizeTimer);
-          _resizeTimer = setTimeout(() => this.editor && this.editor.layout(), 100);
-        });
-        ro.observe(this.$refs.editorContainer);
-
-        this._monacoReady = true;
-
-        // If a slug was requested before Monaco was ready, load it now.
-        if (this._pendingSlug) {
-          this._doLoad(this._pendingSlug);
-          this._pendingSlug = null;
-        }
-      });
-    },
+    // No x-init. This component is fully inert until loadRole() is called.
+    // This means 0 bytes of Monaco JS are downloaded on page load.
 
     async loadRole(slug) {
-      // Called by the `role-load` window event listener (@role-load.window).
+      // Triggered by @role-load.window when user clicks "View / Edit Prompt".
+      // First call boots Monaco by injecting the loader script dynamically,
+      // then loads the file. Subsequent calls skip straight to _doLoad().
       if (!this._monacoReady) {
-        // Monaco still booting — queue the slug and load once ready.
         this._pendingSlug = slug;
-        this.setStatus('Monaco loading…', '');
+        if (!this._monacoBooted) {
+          this._monacoBooted = true;
+          this.setStatus('Loading editor…', '');
+          this._injectMonaco();
+        }
         return;
       }
       await this._doLoad(slug);
+    },
+
+    _injectMonaco() {
+      // Dynamically inject the Monaco AMD loader — only on first use.
+      // Keeps 1.5 MB+ of Monaco JS off the page until the user asks for it.
+      const MONACO_VERSION = '0.52.0';
+      const CDN = `https://cdn.jsdelivr.net/npm/monaco-editor@${MONACO_VERSION}/min/vs`;
+
+      const script = document.createElement('script');
+      script.src = `${CDN}/loader.js`;
+      script.onload = () => {
+        require.config({ paths: { vs: CDN } });
+        require(['vs/editor/editor.main'], () => {
+          if (this.editor) return; // Guard against double-init.
+
+          if (this.$refs.editorPlaceholder) {
+            this.$refs.editorPlaceholder.style.display = 'none';
+          }
+
+          this.editor = monaco.editor.create(this.$refs.editorContainer, {
+            value: '',
+            language: 'markdown',
+            theme: 'vs-dark',
+            automaticLayout: false,
+            minimap: { enabled: false },
+            wordWrap: 'on',
+            scrollBeyondLastLine: false,
+            readOnly: true,
+          });
+
+          // Debounced ResizeObserver — layout() at most once per 100 ms.
+          let _t = null;
+          new ResizeObserver(() => {
+            clearTimeout(_t);
+            _t = setTimeout(() => this.editor && this.editor.layout(), 100);
+          }).observe(this.$refs.editorContainer);
+
+          this._monacoReady = true;
+
+          if (this._pendingSlug) {
+            this._doLoad(this._pendingSlug);
+            this._pendingSlug = null;
+          }
+        });
+      };
+      document.head.appendChild(script);
     },
 
     async _doLoad(slug) {

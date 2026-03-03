@@ -3,8 +3,12 @@
 {% block title %}Cognitive Architecture Studio — AgentCeption{% endblock %}
 
 {% block head %}
-{# Monaco AMD loader — CDN, loaded only on this page #}
-<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs/loader.js"></script>
+{#
+  Monaco is NOT loaded here on page init. The loader script is injected
+  dynamically by rolesEditor._bootMonaco() only when the user explicitly
+  clicks "View / Edit Prompt" — preventing 1.5 MB+ of JS from blocking
+  the main thread on every page visit.
+#}
 {% endblock %}
 
 {% block content %}
@@ -146,7 +150,6 @@
   <div
     class="cas-panel cas-panel--editor"
     x-data="rolesEditor()"
-    x-init="init()"
     @role-load.window="loadRole($event.detail.slug)"
   >
     <div class="cas-editor-header">
