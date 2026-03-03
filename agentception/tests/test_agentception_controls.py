@@ -27,7 +27,7 @@ from agentception.app import app
 @pytest.fixture()
 def client(tmp_path: Path) -> Generator[TestClient, None, None]:
     """Test client with a temporary repo_dir so sentinel writes stay isolated."""
-    # Patch _SENTINEL in the api module to point into tmp_path.
+    # Patch _SENTINEL in the api.control sub-module to point into tmp_path.
     sentinel = tmp_path / ".pipeline-pause"
     with patch("agentception.routes.api.control._SENTINEL", sentinel):
         with TestClient(app) as c:
@@ -146,3 +146,20 @@ def test_status_updates_after_resume(tmp_path: Path, client_paused: TestClient) 
         client_paused.post("/api/control/resume")
         response = client_paused.get("/api/control/status")
     assert response.json() == {"paused": False}
+
+
+# ── POST /api/control/trigger-poll ───────────────────────────────────────────
+
+
+def test_trigger_poll_returns_triggered_true(client: TestClient) -> None:
+    """POST /api/control/trigger-poll must return {triggered: true}.
+
+    The actual poll tick runs asynchronously; we verify only the HTTP response
+    shape and that the endpoint does not raise.
+    """
+    with patch("agentception.routes.api.control.trigger_poll.__wrapped__", None, create=True):
+        pass
+    with patch("agentception.poller.tick", return_value=None) as mock_tick:  # noqa: F841
+        response = client.post("/api/control/trigger-poll")
+    assert response.status_code == 200
+    assert response.json() == {"triggered": True}
