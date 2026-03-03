@@ -269,3 +269,26 @@ main {
   border-color: var(--border-strong);
 }
 
+/* ── Skip-to-content link (a11y) ──────────────────────────────── */
+
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 1rem;
+  z-index: 9999;
+  padding: 0.5rem 1rem;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: 0 0 var(--radius) var(--radius);
+  text-decoration: none;
+  transition: top 0.15s ease;
+
+  &:focus {
+    top: 0;
+    outline: 3px solid var(--accent-bright);
+    outline-offset: 2px;
+  }
+}
+

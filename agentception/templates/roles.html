@@ -193,6 +193,7 @@
       aria-modal="true"
       aria-label="Diff preview"
       @click.self="diffVisible = false"
+      @keydown.escape.window="diffVisible = false"
       x-cloak
     >
       <div class="cas-diff-modal">

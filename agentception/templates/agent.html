@@ -121,6 +121,7 @@
       x-show="showKillModal"
       x-cloak
       @keydown.escape.window="showKillModal = false"
+      @click.self="showKillModal = false"
       role="dialog"
       aria-modal="true"
       aria-labelledby="kill-modal-title"
