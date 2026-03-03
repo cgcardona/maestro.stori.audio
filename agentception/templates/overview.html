@@ -336,20 +336,16 @@
     </div>
     <div
       class="summary-item"
-      :class="(state.stale_branches || []).length > 0 ? 'summary-item--warn' : 'summary-item--dim'"
+      :class="[
+        (state.stale_branches || []).length > 0 ? 'summary-item--warn' : 'summary-item--dim',
+        (state.stale_branches || []).length > 0 && !sweeping ? 'summary-item--clickable' : ''
+      ]"
       x-data="sweepControl()"
+      @click="(state.stale_branches || []).length > 0 && !sweeping && sweep()"
+      :title="(state.stale_branches || []).length > 0 ? (sweeping ? 'Sweeping…' : 'Click to delete stale branches') : ''"
     >
-      <span class="summary-label">Stale</span>
+      <span class="summary-label" x-text="sweeping ? 'Sweeping…' : 'Stale'"></span>
       <span class="summary-value" x-text="(state.stale_branches || []).length"></span>
-      <button
-        class="sweep-btn"
-        x-show="(state.stale_branches || []).length > 0"
-        x-cloak
-        @click.stop="sweep()"
-        :disabled="sweeping"
-        :title="sweeping ? 'Sweeping…' : 'Delete all stale branches and clear orphan labels'"
-        x-text="sweeping ? '…' : '⌫'"
-      ></button>
     </div>
     <div class="summary-item">
       <span class="summary-label">Msgs</span>

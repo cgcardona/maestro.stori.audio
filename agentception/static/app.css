@@ -313,26 +313,14 @@ main {
 .summary-item--warn { opacity: 1; }
 .summary-item--warn .summary-label { color: var(--warning); }
 .summary-item--warn .summary-value  { color: var(--warning); }
-
-/* Sweep button inside stale summary-item */
-.sweep-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: 0.3rem;
-  padding: 0 0.3rem;
-  height: 16px;
-  font-size: 0.65rem;
-  background: rgba(251,191,36,0.15);
-  border: 1px solid rgba(251,191,36,0.35);
-  border-radius: 3px;
-  color: var(--warning);
+.summary-item--clickable {
   cursor: pointer;
+  border-radius: 4px;
   transition: background 0.12s;
-  vertical-align: middle;
 }
-.sweep-btn:hover:not(:disabled) { background: rgba(251,191,36,0.28); }
-.sweep-btn:disabled { opacity: 0.5; cursor: default; }
+.summary-item--clickable:hover {
+  background: rgba(251,191,36,0.1);
+}
 
 .summary-label {
   font-size: 0.575rem;
@@ -1794,15 +1782,515 @@ main {
 
 /* ── Forms ────────────────────────────────────────────────────── */
 
+/* ═══ Spawn / Mission Control page ═══════════════════════════════════════ */
+
 .spawn-page {
-  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
 }
 
-.spawn-form {
+/* ── Status bar ─────────────────────────────────────────────── */
+
+.spawn-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+}
+
+.spawn-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+
+.spawn-status-pill--phase {
+  color: var(--accent);
+  border-color: var(--accent-glow);
+  background: rgba(124, 106, 247, 0.08);
+}
+
+.spawn-status-pill--unclaimed {
+  color: var(--success);
+  border-color: rgba(74, 222, 128, 0.25);
+  background: rgba(74, 222, 128, 0.07);
+}
+
+.spawn-status-pill--claimed {
+  color: var(--warning);
+  border-color: var(--warning-border);
+  background: var(--warning-dim);
+}
+
+.spawn-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+/* ── Mode tabs ──────────────────────────────────────────────── */
+
+.spawn-tabs {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-elevated);
+  width: fit-content;
+}
+
+.spawn-tab {
+  padding: 0.5rem 1.1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border-default);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.spawn-tab:last-child {
+  border-right: none;
+}
+
+.spawn-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.spawn-tab--active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.spawn-tab--active:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ── Mode panels ────────────────────────────────────────────── */
+
+.spawn-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Single-agent layout: issue board left, role picker right */
+.spawn-single-layout {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (max-width: 820px) {
+  .spawn-single-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Issue board ────────────────────────────────────────────── */
+
+.spawn-issue-board {
   display: flex;
   flex-direction: column;
   gap: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  overflow: hidden;
 }
+
+.spawn-issue-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-void);
+}
+
+.spawn-issue-search {
+  flex: 1;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-family: var(--font-sans);
+  padding: 0.35rem 0.6rem;
+  transition: border-color 0.15s;
+}
+
+.spawn-issue-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.spawn-issue-search::placeholder {
+  color: var(--text-muted);
+}
+
+.spawn-issue-refresh {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  line-height: 1;
+}
+
+.spawn-issue-refresh:hover {
+  color: var(--text-secondary);
+  border-color: var(--border-default);
+}
+
+.spawn-issue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.spawn-issue-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: background 0.12s;
+  user-select: none;
+}
+
+.spawn-issue-card:last-child {
+  border-bottom: none;
+}
+
+.spawn-issue-card:hover:not(.spawn-issue-card--claimed) {
+  background: var(--bg-hover);
+}
+
+.spawn-issue-card--selected {
+  background: rgba(124, 106, 247, 0.1);
+  border-left: 3px solid var(--accent);
+}
+
+.spawn-issue-card--claimed {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.spawn-issue-num {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  padding-top: 0.1rem;
+  min-width: 2.8rem;
+}
+
+.spawn-issue-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.spawn-issue-title {
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spawn-issue-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.2rem;
+}
+
+.spawn-issue-phase {
+  font-size: 0.67rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: rgba(124, 106, 247, 0.1);
+  border: 1px solid rgba(124, 106, 247, 0.2);
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+}
+
+.spawn-issue-wip {
+  font-size: 0.67rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--warning);
+  background: var(--warning-dim);
+  border: 1px solid var(--warning-border);
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+}
+
+.spawn-issue-empty {
+  padding: 1.5rem 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+/* ── Role picker ────────────────────────────────────────────── */
+
+.spawn-role-picker {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+
+.spawn-role-section {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.spawn-role-section:last-child {
+  border-bottom: none;
+}
+
+.spawn-role-section-label {
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 0.45rem 0.75rem 0.3rem;
+  background: var(--bg-void);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.spawn-role-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  transition: background 0.12s;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.spawn-role-option:last-child {
+  border-bottom: none;
+}
+
+.spawn-role-option:hover {
+  background: var(--bg-hover);
+}
+
+.spawn-role-option--selected {
+  background: rgba(124, 106, 247, 0.1);
+}
+
+.spawn-role-radio {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--border-default);
+  flex-shrink: 0;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.spawn-role-option--selected .spawn-role-radio {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.spawn-role-name {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.spawn-role-option--selected .spawn-role-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* ── Wave mode panel ────────────────────────────────────────── */
+
+.spawn-wave-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.spawn-wave-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  background: rgba(124, 106, 247, 0.06);
+  border: 1px solid rgba(124, 106, 247, 0.15);
+  border-radius: var(--radius);
+}
+
+.spawn-wave-count {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--accent);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.spawn-wave-label {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.spawn-wave-label strong {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+/* ── Coordinator mode panel ─────────────────────────────────── */
+
+.spawn-coordinator-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.spawn-coordinator-desc {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  padding: 0.75rem 1rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+}
+
+.spawn-brain-dump {
+  width: 100%;
+  min-height: 120px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-family: var(--font-sans);
+  padding: 0.75rem 1rem;
+  resize: vertical;
+  transition: border-color 0.15s;
+  line-height: 1.55;
+}
+
+.spawn-brain-dump:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.spawn-brain-dump::placeholder {
+  color: var(--text-muted);
+}
+
+/* ── Actions row ────────────────────────────────────────────── */
+
+.spawn-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.spawn-selection-summary {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.spawn-selection-summary strong {
+  color: var(--text-secondary);
+}
+
+/* ── Result panels ──────────────────────────────────────────── */
+
+.spawn-result {
+  border-left: 3px solid var(--success);
+}
+
+.spawn-result--wave {
+  border-left: 3px solid var(--accent);
+}
+
+.spawn-result--error {
+  border-left: 3px solid var(--danger, #f87171);
+}
+
+.spawn-result-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.3rem 1rem;
+  font-size: 0.82rem;
+}
+
+.spawn-result-key {
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.spawn-result-val {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.77rem;
+  word-break: break-all;
+}
+
+.spawn-wave-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.spawn-wave-result-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.spawn-wave-result-skip {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+/* ── Shared form utilities ──────────────────────────────────── */
 
 .form-group {
   display: flex;
@@ -1842,10 +2330,6 @@ main {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-}
-
-.spawn-result {
-  border-left: 3px solid var(--success);
 }
 
 .agent-task-pre {
@@ -2200,53 +2684,46 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Worktrees page ───────────────────────────────────────────── */
+/* ── Agent Sandboxes page (worktrees) ─────────────────────────── */
 
 /* Page header */
-.wt-page-header {
-  margin-bottom: 1.5rem;
+.env-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+  gap: 1rem;
 }
 
-.wt-page-title {
+.env-page-title {
   font-size: 1.35rem;
   font-weight: 700;
   color: var(--text-primary);
   margin: 0 0 0.375rem;
 }
 
-.wt-page-subtitle {
+.env-page-subtitle {
   font-size: 0.8125rem;
   color: var(--text-muted);
   margin: 0;
-  max-width: 60ch;
+  max-width: 58ch;
 }
 
-/* Summary bar */
-.wt-summary {
-  display: flex;
-  align-items: center;
-  gap: 2rem;
-  padding: 0.875rem 1.25rem;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius);
-  margin-bottom: 1.5rem;
-}
-
-.wt-summary-stat {
+.env-page-meta {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  align-items: flex-end;
+  flex-shrink: 0;
 }
 
-.wt-summary-value {
-  font-size: 1.375rem;
+.env-page-count {
+  font-size: 2rem;
   font-weight: 700;
-  color: var(--text-primary);
+  color: var(--accent);
   line-height: 1;
 }
 
-.wt-summary-label {
+.env-page-count-label {
   font-size: 0.7rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -2254,101 +2731,189 @@ main {
   color: var(--text-muted);
 }
 
-.wt-summary-actions {
-  margin-left: auto;
+/*
+  Tree container.
+
+  Layout: the vertical trunk line is a ::before pseudo-element on .env-tree.
+  It runs from below the trunk node dot to the bottom of the last branch.
+  Each .env-branch draws an L-shaped connector to that trunk via its own
+  ::before (horizontal) and the trunk line (vertical, shared).
+*/
+.env-tree {
+  position: relative;
+  padding-left: 1.5rem;         /* room for trunk line + connector arms */
 }
 
-/* Section layout */
-.wt-section {
-  margin-bottom: 2rem;
+/* Vertical trunk line */
+.env-tree::before {
+  content: '';
+  position: absolute;
+  left: 0.5rem;                 /* centre of the trunk dot */
+  top: 1.5rem;                  /* start below the trunk dot */
+  bottom: 1.75rem;              /* stop above the last branch connector */
+  width: 2px;
+  background: linear-gradient(
+    to bottom,
+    var(--accent) 0%,
+    rgba(124, 58, 237, 0.3) 70%,
+    transparent 100%
+  );
+  border-radius: 1px;
 }
 
-.wt-section-header {
+/* ── Trunk node (base environment) ───────────────────────────── */
+
+.env-trunk-node {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 1.25rem;
+  position: relative;
+  z-index: 1;
 }
 
-.wt-section-title {
+.env-trunk-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid var(--bg-base);
+  box-shadow: 0 0 0 2px var(--accent);
+  flex-shrink: 0;
+  margin-left: -0.125rem;       /* nudge to centre on trunk line */
+}
+
+.env-trunk-info {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+}
+
+.env-trunk-branch {
+  font-family: var(--font-mono, monospace);
   font-size: 0.875rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  margin: 0;
+  color: var(--text-primary);
 }
 
-.wt-section-count {
-  font-size: 0.75rem;
-  font-weight: 700;
+.env-trunk-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   color: var(--text-muted);
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  padding: 0.1em 0.55em;
+  border-radius: 4px;
+  padding: 0.15em 0.5em;
 }
 
-/* Worktree cards */
-.wt-cards {
+.env-trunk-sha {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.env-trunk-commit {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40ch;
+}
+
+/* ── Branch item ──────────────────────────────────────────────── */
+
+.env-branch {
+  position: relative;
+  margin-bottom: 0.875rem;
+  transition: opacity 0.25s, transform 0.25s;
+}
+
+/* Horizontal arm from trunk to branch origin dot */
+.env-branch::before {
+  content: '';
+  position: absolute;
+  left: -1rem;                  /* from trunk line */
+  top: 1.125rem;                /* align with branch origin dot */
+  width: 1rem;
+  height: 2px;
+  background: rgba(124, 58, 237, 0.5);
+}
+
+/* Last branch: visually terminate trunk line here */
+.env-branch--last::after {
+  content: '';
+  position: absolute;
+  left: -1.0625rem;
+  top: 1.0625rem;
+  width: 8px;
+  height: 8px;
+  border-left: 2px solid rgba(124, 58, 237, 0.5);
+  border-bottom: 2px solid rgba(124, 58, 237, 0.5);
+  border-radius: 0 0 0 3px;
+}
+
+/* Branch origin dot — sits at the junction of trunk arm and branch content */
+.env-branch-origin-dot {
+  position: absolute;
+  left: -1.3125rem;
+  top: 0.8125rem;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--bg-base);
+  border: 2px solid var(--accent);
+  z-index: 1;
+}
+
+.env-branch--open .env-branch-origin-dot {
+  background: var(--accent);
+}
+
+/* The clickable head row */
+.env-branch-head {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.wt-card {
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
-  overflow: hidden;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.wt-card:hover {
-  border-color: var(--border-strong);
-}
-
-.wt-card--open {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.15);
-}
-
-.wt-card--main {
-  border-left: 3px solid var(--text-muted);
-}
-
-.wt-card--agent {
-  border-left: 3px solid var(--accent);
-}
-
-/* Card header — always visible, clickable */
-.wt-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1rem;
   cursor: pointer;
   user-select: none;
-  gap: 1rem;
+  transition: border-color 0.15s, background 0.15s;
 }
 
-.wt-card-header-left {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  min-width: 0;
+.env-branch-head:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover, var(--bg-surface));
+}
+
+.env-branch--open .env-branch-head {
+  border-color: var(--accent);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  background: rgba(124, 58, 237, 0.04);
+}
+
+/* Right side of branch head — name + actions */
+.env-branch-content {
   flex: 1;
+  min-width: 0;
 }
 
-.wt-card-header-right {
+.env-branch-top {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
-  flex-shrink: 0;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
-/* Type badges */
-.wt-badge {
+/* Badges */
+.env-badge {
   display: inline-flex;
   align-items: center;
   font-size: 0.65rem;
@@ -2360,38 +2925,41 @@ main {
   flex-shrink: 0;
 }
 
-.wt-badge--main    { background: rgba(100, 116, 139, 0.15); color: var(--text-muted); }
-.wt-badge--agent   { background: rgba(124, 58, 237, 0.15);  color: var(--accent); }
-.wt-badge--linked  { background: rgba(59, 130, 246, 0.15);  color: #60a5fa; }
-.wt-badge--stale   { background: rgba(245, 158, 11, 0.15);  color: #fbbf24; }
-.wt-badge--current { background: rgba(34, 197, 94, 0.15);   color: #4ade80; }
+.env-badge--issue  { background: rgba(124, 58, 237, 0.15); color: var(--accent); }
+.env-badge--custom { background: rgba(59, 130, 246, 0.15);  color: #60a5fa; }
 
-/* Lock icon */
-.wt-lock {
+.env-lock {
   font-size: 0.7rem;
-  opacity: 0.6;
+  opacity: 0.55;
   flex-shrink: 0;
 }
 
-/* Branch name in card header */
-.wt-card-branch {
+.env-branch-name {
   font-family: var(--font-mono, monospace);
   font-size: 0.8125rem;
-  color: var(--text-primary);
   font-weight: 600;
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
 }
 
-/* Age / metadata in header right */
-.wt-card-age {
+/* Actions cluster — pushed to right */
+.env-branch-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.env-age {
   font-size: 0.75rem;
   color: var(--text-muted);
 }
 
-/* GitHub link */
-.wt-card-gh-link {
+.env-gh-link {
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--accent);
@@ -2400,85 +2968,66 @@ main {
   border: 1px solid rgba(124, 58, 237, 0.3);
   border-radius: 4px;
   transition: background 0.12s;
+  flex-shrink: 0;
 }
 
-.wt-card-gh-link:hover {
-  background: rgba(124, 58, 237, 0.12);
-}
+.env-gh-link:hover { background: rgba(124, 58, 237, 0.12); }
 
-/* Delete button */
-.wt-card-delete {
+.env-delete {
   opacity: 0;
   transition: opacity 0.15s;
 }
 
-.wt-card:hover .wt-card-delete {
-  opacity: 1;
-}
+.env-branch-head:hover .env-delete { opacity: 1; }
 
-/* Expand chevron */
-.wt-card-chevron {
+.env-chevron {
   font-size: 0.7rem;
   color: var(--text-muted);
   transition: transform 0.2s;
   display: inline-block;
 }
 
-.wt-card-chevron--open {
-  transform: rotate(180deg);
-}
+.env-chevron--open { transform: rotate(180deg); }
 
-/* Meta row — path, SHA, commit message */
-.wt-card-meta {
+/* HEAD commit preview row */
+.env-branch-commit-preview {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0 1rem 0.625rem;
+  margin-top: 0.375rem;
   font-size: 0.775rem;
   color: var(--text-muted);
-  overflow: hidden;
 }
 
-.wt-card-sha {
+.env-sha {
   font-family: var(--font-mono, monospace);
   font-size: 0.7rem;
+  color: var(--accent);
   flex-shrink: 0;
 }
 
-.wt-card-meta-sep {
-  opacity: 0.4;
-  flex-shrink: 0;
-}
-
-.wt-card-commit {
+.env-commit-msg {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
 }
 
-.wt-card-path {
-  font-family: var(--font-mono, monospace);
-  font-size: 0.68rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 22ch;
-  flex-shrink: 0;
-}
+/* ── Expandable body ──────────────────────────────────────────── */
 
-/* Expandable body */
-.wt-card-body {
-  border-top: 1px solid var(--border-subtle);
+.env-branch-body {
   background: var(--bg-base);
+  border: 1px solid var(--accent);
+  border-top: none;
+  border-bottom-left-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
+  overflow: hidden;
 }
 
-/* Detail panel content */
-.wt-detail {
-  padding: 1rem 1.25rem;
+.env-detail {
+  padding: 1.25rem 1.5rem;
 }
 
-.wt-detail-loading {
+.env-detail-loading {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -2487,96 +3036,140 @@ main {
   padding: 0.5rem 0;
 }
 
-/* Spinner */
-@keyframes wt-spin {
+@keyframes env-spin {
   to { transform: rotate(360deg); }
 }
 
-.wt-spinner {
+.env-spinner {
   display: inline-block;
   width: 12px;
   height: 12px;
   border: 2px solid var(--border-subtle);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: wt-spin 0.7s linear infinite;
+  animation: env-spin 0.7s linear infinite;
+  flex-shrink: 0;
 }
 
-/* Detail sections */
-.wt-detail-section {
-  margin-bottom: 1.25rem;
+/* ── Commit chain (within expanded detail) ────────────────────── */
+
+.env-commit-section,
+.env-diff-section,
+.env-task-section {
+  margin-bottom: 1.5rem;
 }
 
-.wt-detail-section:last-child {
+.env-commit-section:last-child,
+.env-diff-section:last-child,
+.env-task-section:last-child {
   margin-bottom: 0;
 }
 
-.wt-detail-section-title {
+.env-detail-heading {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.625rem;
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.75rem;
 }
 
-.wt-detail-count {
+.env-detail-meta {
   font-weight: 400;
   text-transform: none;
   letter-spacing: 0;
   font-size: 0.75rem;
 }
 
-.wt-detail-empty {
+.env-detail-empty {
   font-size: 0.8125rem;
   color: var(--text-muted);
   font-style: italic;
   margin: 0;
 }
 
-/* Commit list */
-.wt-commits {
-  list-style: none;
-  padding: 0;
-  margin: 0;
+/* Vertical dot chain of commits */
+.env-commit-chain {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
 }
 
-.wt-commit {
+.env-commit-node {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+/* Spine: dot + connecting line below it */
+.env-commit-spine {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 14px;
+}
+
+.env-commit-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--bg-base);
+  border: 2px solid rgba(124, 58, 237, 0.5);
+  flex-shrink: 0;
+  margin-top: 0.2rem;
+}
+
+.env-commit-dot--head {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2);
+}
+
+/* Vertical connector between dots */
+.env-commit-line {
+  width: 2px;
+  flex: 1;
+  min-height: 1.25rem;
+  background: rgba(124, 58, 237, 0.25);
+  margin: 0.15rem 0;
+}
+
+/* Commit label */
+.env-commit-body {
   display: flex;
   align-items: baseline;
   gap: 0.625rem;
-  font-size: 0.8125rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-  transition: background 0.1s;
+  padding: 0.05rem 0 0.875rem;
+  flex: 1;
+  min-width: 0;
 }
 
-.wt-commit:hover {
-  background: var(--bg-surface);
-}
-
-.wt-commit-sha {
+.env-commit-sha {
   font-family: var(--font-mono, monospace);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--accent);
   flex-shrink: 0;
 }
 
-.wt-commit-msg {
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.env-head-tag {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  background: rgba(124, 58, 237, 0.12);
+  border: 1px solid rgba(124, 58, 237, 0.3);
+  border-radius: 3px;
+  padding: 0.1em 0.4em;
+  flex-shrink: 0;
 }
 
-/* Diff stat block */
-.wt-diff-stat {
+/* Diff stat + task file */
+.env-diff-stat,
+.env-task-file {
   font-family: var(--font-mono, monospace);
   font-size: 0.78rem;
   line-height: 1.65;
@@ -2590,122 +3183,24 @@ main {
   white-space: pre;
 }
 
-/* Task file */
-.wt-task-file {
-  font-family: var(--font-mono, monospace);
-  font-size: 0.78rem;
-  line-height: 1.65;
-  color: var(--text-secondary);
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius);
-  padding: 0.75rem 1rem;
-  overflow-x: auto;
+.env-task-file {
   max-height: 280px;
   overflow-y: auto;
-  margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-/* Branches & stash tables */
-.wt-table-card {
-  padding: 0;
-  overflow: hidden;
-}
-
-.wt-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.8125rem;
-}
-
-.wt-table thead th {
-  padding: 0.5rem 0.875rem;
-  text-align: left;
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+/* Empty state */
+.env-empty {
+  padding: 2.5rem 1.5rem;
   color: var(--text-muted);
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-surface);
+  font-size: 0.875rem;
+  text-align: center;
 }
 
-.wt-table tbody td {
-  padding: 0.5rem 0.875rem;
-  border-bottom: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
-  vertical-align: middle;
-}
+.env-empty p { margin: 0.25rem 0; }
+.env-empty a { color: var(--accent); }
 
-.wt-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.wt-row--current td {
-  background: rgba(124, 58, 237, 0.04);
-}
-
-.wt-row--stale {
-  opacity: 0.6;
-}
-
-.wt-row--stale td:first-child {
-  text-decoration: line-through;
-  text-decoration-color: var(--text-muted);
-}
-
-.wt-branch-name {
-  font-family: var(--font-mono, monospace);
-  font-size: 0.7875rem;
-  color: var(--text-primary);
-}
-
-.wt-sha {
-  font-family: var(--font-mono, monospace);
-  font-size: 0.72rem;
-  color: var(--text-muted);
-}
-
-.wt-current-marker {
-  color: var(--accent);
-  font-weight: 700;
-}
-
-.wt-stash-ref {
-  font-family: var(--font-mono, monospace);
-  font-size: 0.72rem;
-  color: var(--text-muted);
-}
-
-.wt-col-num {
-  text-align: right;
-  width: 2.5rem;
-}
-
-.wt-ahead { color: var(--success, #4ade80); }
-.wt-behind { color: var(--warning, #fbbf24); }
-
-.wt-commit-cell {
-  max-width: 280px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.wt-col-action {
-  text-align: right;
-  padding-right: 0.75rem;
-}
-
-.wt-empty {
-  color: var(--text-muted);
-  font-size: 0.8125rem;
-  font-style: italic;
-  margin: 0;
-  padding: 1rem;
-}
 
 /* ── Docs page ────────────────────────────────────────────────── */
 
@@ -5354,3 +5849,450 @@ main {
   .api-main { padding: 1rem; }
   .api-try-field { grid-template-columns: 1fr; }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   Agents page
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Layout ─────────────────────────────────────────────────── */
+.agents-page { display: flex; flex-direction: column; gap: 1.5rem; }
+
+.agents-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.agents-page-subtitle { margin-top: 0.25rem; font-size: 0.82rem; }
+
+/* ── KPI stats bar ─────────────────────────────────────────── */
+.agents-stats-bar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+@media (max-width: 900px) { .agents-stats-bar { grid-template-columns: repeat(4, 1fr); } }
+@media (max-width: 500px) { .agents-stats-bar { grid-template-columns: repeat(2, 1fr); } }
+
+.agents-stat {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 0.65rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  text-align: center;
+  min-width: 0;
+}
+
+.agents-stat__value {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+.agents-stat__value--live   { color: var(--accent-bright); }
+.agents-stat__value--done   { color: var(--success); }
+.agents-stat__value--failed { color: var(--danger); }
+
+.agents-stat__label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+/* ── Toolbar ───────────────────────────────────────────────── */
+.agents-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.875rem;
+}
+
+.agents-filter-chips {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.filter-chip {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 20px;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.filter-chip:hover { border-color: var(--accent); color: var(--text-primary); }
+.filter-chip--active {
+  background: rgba(124,106,247,.18);
+  border-color: var(--accent);
+  color: var(--accent-bright);
+}
+.filter-chip--implementing { --chip-c: #3b82f6; }
+.filter-chip--reviewing    { --chip-c: var(--warning); }
+.filter-chip--done         { --chip-c: var(--success); }
+.filter-chip--stale        { --chip-c: var(--danger); }
+.filter-chip--unknown      { --chip-c: var(--text-muted); }
+.filter-chip.filter-chip--active.filter-chip--implementing { border-color: #3b82f6; color: #3b82f6; background: rgba(59,130,246,.12); }
+.filter-chip.filter-chip--active.filter-chip--reviewing    { border-color: var(--warning); color: var(--warning); background: rgba(234,179,8,.1); }
+.filter-chip.filter-chip--active.filter-chip--done         { border-color: var(--success); color: var(--success); background: rgba(34,197,94,.1); }
+.filter-chip.filter-chip--active.filter-chip--stale        { border-color: var(--danger);  color: var(--danger);  background: rgba(239,68,68,.1); }
+
+.filter-chip__count {
+  background: var(--bg-overlay);
+  border-radius: 8px;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.65rem;
+}
+
+.agents-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.agents-select {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 5px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+}
+.agents-select:focus { border-color: var(--accent); outline: none; }
+
+.agents-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.agents-search-icon {
+  position: absolute;
+  left: 0.5rem;
+  font-size: 0.75rem;
+  pointer-events: none;
+}
+
+.agents-search {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 5px;
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem 0.25rem 1.75rem;
+  width: 200px;
+  transition: border-color 0.12s;
+}
+.agents-search:focus { border-color: var(--accent); outline: none; }
+
+.view-toggle {
+  display: flex;
+  border: 1px solid var(--border-default);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.view-toggle__btn {
+  background: var(--bg-elevated);
+  border: none;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.view-toggle__btn:hover     { background: var(--bg-overlay); color: var(--text-primary); }
+.view-toggle__btn--active   { background: rgba(124,106,247,.2); color: var(--accent-bright); }
+
+/* ── Section headers ───────────────────────────────────────── */
+.agents-section { display: flex; flex-direction: column; gap: 0.75rem; }
+.agents-section-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 0.4rem;
+  color: var(--text-secondary);
+}
+.section-title-icon   { font-size: 1rem; }
+.agents-section-subtitle { color: var(--text-muted); font-weight: 400; font-size: 0.75rem; }
+.badge-count--live    { background: rgba(22,153,255,.2); color: var(--accent-bright); }
+
+/* ── Empty states ──────────────────────────────────────────── */
+.agents-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 2.5rem 2rem;
+  text-align: center;
+}
+.agents-empty__icon  { font-size: 2.5rem; }
+.agents-empty__title { font-size: 1rem; font-weight: 700; color: var(--text-primary); }
+.agents-empty__body  { font-size: 0.82rem; color: var(--text-muted); max-width: 36ch; }
+
+/* ── Live agents grid ──────────────────────────────────────── */
+.agents-live-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+.agent-live-card {
+  display: flex;
+  gap: 0.75rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 0.875rem;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
+}
+.agent-live-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+  text-decoration: none;
+  color: inherit;
+}
+.agent-live-card--implementing { border-left-color: #3b82f6; }
+.agent-live-card--reviewing    { border-left-color: var(--warning); }
+.agent-live-card--done         { border-left-color: var(--success); }
+.agent-live-card--stale        { border-left-color: var(--danger); }
+.agent-live-card--unknown      { border-left-color: var(--border-strong); }
+.agent-live-card--stale-idle   {
+  border-left-color: var(--warning);
+  background: rgba(234,179,8,.04);
+}
+
+.agent-live-avatar {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+  background: var(--bg-elevated);
+  border: 1.5px solid var(--border-default);
+}
+.agent-live-avatar--visionary  { border-color: var(--arch-visionary);  background: rgba(155,89,182,.18); }
+.agent-live-avatar--architect  { border-color: var(--arch-architect);  background: rgba(52,152,219,.18); }
+.agent-live-avatar--hacker     { border-color: var(--arch-hacker);     background: rgba(243,156,18,.18); }
+.agent-live-avatar--guardian   { border-color: var(--arch-guardian);   background: rgba(39,174,96,.18); }
+.agent-live-avatar--scholar    { border-color: var(--arch-scholar);    background: rgba(26,188,156,.18); }
+.agent-live-avatar--mentor     { border-color: var(--arch-mentor);     background: rgba(230,126,34,.18); }
+.agent-live-avatar--operator   { border-color: var(--arch-operator);   background: rgba(149,165,166,.15); }
+.agent-live-avatar--pragmatist { border-color: var(--arch-pragmatist); background: rgba(231,76,60,.18); }
+.agent-live-avatar--default    { border-color: var(--border-default);  background: var(--bg-elevated); }
+
+.agent-live-body    { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+.agent-live-top     { display: flex; align-items: center; gap: 0.4rem; }
+.agent-live-role    { font-size: 0.85rem; font-weight: 700; color: var(--text-primary); }
+.agent-live-persona { font-size: 0.72rem; color: var(--text-muted); }
+
+.agent-live-chips   { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.2rem; }
+.agent-live-branch  {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  background: var(--bg-elevated);
+  border-radius: 3px;
+  padding: 0.05rem 0.3rem;
+}
+
+.agent-live-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.3rem;
+}
+
+.agent-live-elapsed {
+  font-size: 0.68rem;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-live-stale-badge {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--warning);
+  background: rgba(234,179,8,.12);
+  border: 1px solid rgba(234,179,8,.3);
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+  letter-spacing: 0.03em;
+}
+
+.agent-sandbox-link {
+  margin-left: auto;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  opacity: 0.65;
+  transition: opacity 0.15s, color 0.15s;
+}
+.agent-sandbox-link:hover { opacity: 1; color: var(--accent-bright); }
+
+.agent-arch-link {
+  margin-left: auto;
+  text-decoration: none;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.agent-arch-link:hover { opacity: 1; }
+
+/* ── History — batch groups ────────────────────────────────── */
+.agents-batches { display: flex; flex-direction: column; gap: 0.75rem; }
+
+.batch-group {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.batch-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.875rem;
+  cursor: pointer;
+  background: var(--bg-surface);
+  border-bottom: 1px solid transparent;
+  transition: background 0.12s;
+  flex-wrap: wrap;
+}
+.batch-header:hover { background: var(--bg-elevated); }
+
+.batch-chevron {
+  font-size: 1.2rem;
+  color: var(--text-muted);
+  transition: transform 0.18s;
+  flex-shrink: 0;
+}
+.batch-chevron--open { transform: rotate(90deg); }
+
+.batch-icon       { font-size: 0.9rem; }
+.batch-id         { font-size: 0.8rem; color: var(--text-primary); font-family: var(--font-mono); }
+.batch-meta       { font-size: 0.7rem; }
+.batch-count      { font-size: 0.65rem; }
+.batch-phase      {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent-bright);
+  background: rgba(124,106,247,.12);
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+}
+.batch-success-rate {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--success);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.batch-status-pills { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+
+.batch-body { padding: 0.75rem; border-top: 1px solid var(--border-subtle); }
+
+/* ── History cards grid ────────────────────────────────────── */
+.agents-history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.5rem;
+}
+
+.history-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--border-strong);
+  border-radius: 5px;
+  padding: 0.6rem 0.75rem;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.12s, background 0.12s;
+}
+.history-card:hover { border-color: var(--accent); background: var(--bg-overlay); text-decoration: none; color: inherit; }
+.history-card--implementing { border-left-color: #3b82f6; }
+.history-card--reviewing    { border-left-color: var(--warning); }
+.history-card--done         { border-left-color: var(--success); }
+.history-card--stale        { border-left-color: var(--danger); }
+.history-card--unknown      { border-left-color: var(--border-strong); }
+
+.history-card__top      { display: flex; align-items: center; justify-content: space-between; gap: 0.3rem; }
+.history-card__duration { font-size: 0.65rem; font-variant-numeric: tabular-nums; }
+.history-card__role     { font-size: 0.8rem; font-weight: 600; color: var(--text-primary); }
+.history-card__chips    { display: flex; flex-wrap: wrap; gap: 0.2rem; }
+.history-card__branch   { font-size: 0.62rem; font-family: var(--font-mono); color: var(--text-muted); }
+.history-card__date     { font-size: 0.62rem; }
+.history-card__meta     { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; margin-top: 0.1rem; }
+
+/* ── Retry + spawn mode badges ─────────────────────────────── */
+.run-attempt-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--warning);
+  background: rgba(234,179,8,.12);
+  border: 1px solid rgba(234,179,8,.25);
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+  letter-spacing: 0.02em;
+}
+
+.run-spawn-mode {
+  font-size: 0.6rem;
+  font-weight: 600;
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.run-spawn-mode--wave   { color: var(--accent-bright); background: rgba(124,106,247,.12); border: 1px solid rgba(124,106,247,.2); }
+.run-spawn-mode--chain  { color: #3b82f6;              background: rgba(59,130,246,.1);   border: 1px solid rgba(59,130,246,.2); }
+.run-spawn-mode--manual { color: var(--text-muted);    background: var(--bg-elevated);    border: 1px solid var(--border-subtle); }
+
+/* ── History table ─────────────────────────────────────────── */
+.run-row:hover td { background: var(--bg-elevated); }
+.run-row--implementing td:first-child { border-left: 2px solid #3b82f6; }
+.run-row--reviewing    td:first-child { border-left: 2px solid var(--warning); }
+.run-row--done         td:first-child { border-left: 2px solid var(--success); }
+.run-row--stale        td:first-child { border-left: 2px solid var(--danger); }
+.run-row--unknown      td:first-child { border-left: 2px solid var(--border-strong); }
+.run-status-badge { font-size: 0.65rem; }
+.run-branch       { font-size: 0.68rem; }
+.run-date         { font-size: 0.7rem; white-space: nowrap; }
+.run-duration     { font-size: 0.7rem; white-space: nowrap; font-variant-numeric: tabular-nums; }

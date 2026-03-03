@@ -176,6 +176,8 @@ async def get_agent_run_history(
                 "worktree_path": row.worktree_path,
                 "role": row.role,
                 "status": row.status,
+                "attempt_number": row.attempt_number,
+                "spawn_mode": row.spawn_mode,
                 "batch_id": row.batch_id,
                 "spawned_at": row.spawned_at.isoformat(),
                 "last_activity_at": (

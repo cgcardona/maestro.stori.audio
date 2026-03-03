@@ -840,7 +840,16 @@ async def delete_worktree(slug: str) -> DeleteWorktreeResult:
     pruned = False
     error: str | None = None
 
-    # Remove the worktree (--force bypasses the lock we set at creation time).
+    # Unlock first — locked worktrees silently resist `remove --force`.
+    if wt.get("locked"):
+        unlock_proc = await asyncio.create_subprocess_exec(
+            "git", "-C", repo_dir, "worktree", "unlock", wt_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await unlock_proc.communicate()
+
+    # Remove the worktree directory (--force handles dirty working trees).
     proc = await asyncio.create_subprocess_exec(
         "git", "-C", repo_dir, "worktree", "remove", "--force", wt_path,
         stdout=asyncio.subprocess.PIPE,

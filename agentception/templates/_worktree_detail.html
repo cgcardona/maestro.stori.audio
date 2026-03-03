@@ -1,44 +1,54 @@
 {#
-  HTMX partial — rendered into the expandable body of a worktree card.
-  Receives: slug, found, branch, commits, diff_stat, task_content
+  HTMX partial — rendered into the expandable body of a sandbox branch.
+  Receives: slug, found, branch, commits (list[{sha, message}]), diff_stat, task_content
 #}
 {% if not found %}
-<p class="wt-detail-empty">Worktree not found.</p>
+<p class="env-detail-empty">Sandbox not found.</p>
 {% else %}
 
-{# ── Commits ahead of origin/dev ────────────────────────────────────────── #}
-<div class="wt-detail-section">
-  <h3 class="wt-detail-section-title">
-    Commits
-    <span class="wt-detail-count">{{ commits | length }} ahead of origin/dev</span>
+{# ── Commit chain ────────────────────────────────────────────────────────── #}
+<div class="env-commit-section">
+  <h3 class="env-detail-heading">
+    Commit History
+    <span class="env-detail-meta">
+      {% if commits %}{{ commits | length }} commit{{ 's' if commits | length != 1 }} ahead of dev{% else %}no commits ahead of dev{% endif %}
+    </span>
   </h3>
+
   {% if commits %}
-  <ul class="wt-commits">
+  <div class="env-commit-chain">
     {% for c in commits %}
-    <li class="wt-commit">
-      <code class="wt-commit-sha">{{ c.sha }}</code>
-      <span class="wt-commit-msg">{{ c.message }}</span>
-    </li>
+    <div class="env-commit-node{% if loop.last %} env-commit-node--head{% endif %}">
+      <div class="env-commit-spine">
+        <div class="env-commit-dot{% if loop.last %} env-commit-dot--head{% endif %}"></div>
+        {% if not loop.last %}<div class="env-commit-line"></div>{% endif %}
+      </div>
+      <div class="env-commit-body">
+        <code class="env-commit-sha">{{ c.sha }}</code>
+        <span class="env-commit-msg">{{ c.message }}</span>
+        {% if loop.last %}<span class="env-head-tag">HEAD</span>{% endif %}
+      </div>
+    </div>
     {% endfor %}
-  </ul>
+  </div>
   {% else %}
-  <p class="wt-detail-empty">No commits ahead of origin/dev.</p>
+  <p class="env-detail-empty">No commits ahead of origin/dev — this sandbox is in sync with the base.</p>
   {% endif %}
 </div>
 
-{# ── Diff stat vs origin/dev ─────────────────────────────────────────────── #}
+{# ── Changed files ───────────────────────────────────────────────────────── #}
 {% if diff_stat %}
-<div class="wt-detail-section">
-  <h3 class="wt-detail-section-title">Changed Files</h3>
-  <pre class="wt-diff-stat">{{ diff_stat }}</pre>
+<div class="env-diff-section">
+  <h3 class="env-detail-heading">Changed Files</h3>
+  <pre class="env-diff-stat">{{ diff_stat }}</pre>
 </div>
 {% endif %}
 
-{# ── Agent task file ─────────────────────────────────────────────────────── #}
+{# ── Agent task ──────────────────────────────────────────────────────────── #}
 {% if task_content %}
-<div class="wt-detail-section">
-  <h3 class="wt-detail-section-title">Agent Task</h3>
-  <pre class="wt-task-file">{{ task_content }}</pre>
+<div class="env-task-section">
+  <h3 class="env-detail-heading">Agent Task</h3>
+  <pre class="env-task-file">{{ task_content }}</pre>
 </div>
 {% endif %}
 
