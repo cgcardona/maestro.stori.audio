@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from agentception.config import settings
@@ -36,7 +38,7 @@ class ActiveLabelStatus(BaseModel):
 
 
 @router.post("/control/pause", tags=["control"])
-async def pause_pipeline() -> dict[str, bool]:
+async def pause_pipeline() -> JSONResponse:
     """Create the pipeline-pause sentinel file, halting agent spawning.
 
     Idempotent — calling pause when already paused is a no-op.
@@ -44,17 +46,19 @@ async def pause_pipeline() -> dict[str, bool]:
     every loop iteration and sleep instead of dispatching new agents.
     """
     _SENTINEL.touch()
-    return {"paused": True}
+    hx_trigger = json.dumps({"toast": {"message": "Pipeline paused", "type": "warning"}})
+    return JSONResponse(content={"paused": True}, headers={"HX-Trigger": hx_trigger})
 
 
 @router.post("/control/resume", tags=["control"])
-async def resume_pipeline() -> dict[str, bool]:
+async def resume_pipeline() -> JSONResponse:
     """Remove the pipeline-pause sentinel file, allowing agent spawning to continue.
 
     Idempotent — calling resume when not paused is a no-op.
     """
     _SENTINEL.unlink(missing_ok=True)
-    return {"paused": False}
+    hx_trigger = json.dumps({"toast": {"message": "Pipeline resumed", "type": "success"}})
+    return JSONResponse(content={"paused": False}, headers={"HX-Trigger": hx_trigger})
 
 
 @router.get("/control/status", tags=["control"])
@@ -476,7 +480,7 @@ async def sweep_stale(dry_run: bool = False) -> SweepResult:
 
 
 @router.post("/control/trigger-poll", tags=["control"])
-async def trigger_poll() -> dict[str, bool]:
+async def trigger_poll() -> JSONResponse:
     """Fire an immediate poller tick, refreshing pipeline state from the filesystem.
 
     Equivalent to what the overview page fires in the background on load.
@@ -487,7 +491,8 @@ async def trigger_poll() -> dict[str, bool]:
 
     asyncio.create_task(_tick())
     logger.info("✅ Manual poll tick triggered via /control/trigger-poll")
-    return {"triggered": True}
+    hx_trigger = json.dumps({"toast": {"message": "Poll triggered", "type": "info"}})
+    return JSONResponse(content={"triggered": True}, headers={"HX-Trigger": hx_trigger})
 
 
 @router.post("/control/spawn-coordinator", tags=["control"])

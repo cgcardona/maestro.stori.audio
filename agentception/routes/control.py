@@ -13,10 +13,12 @@ Why a separate router?
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 from agentception.config import settings
 
@@ -61,7 +63,7 @@ async def _run(cmd: list[str]) -> tuple[int, str, str]:
 
 
 @router.post("/kill/{slug}")
-async def kill_agent(slug: str) -> dict[str, str]:
+async def kill_agent(slug: str) -> JSONResponse:
     """Force-remove an agent worktree and clear the ``agent:wip`` GitHub label.
 
     Slug is the bare directory name under ``settings.worktrees_dir``, e.g.
@@ -129,4 +131,5 @@ async def kill_agent(slug: str) -> dict[str, str]:
         logger.warning("⚠️ git worktree prune exited %d: %s", prune_rc, prune_err.strip())
 
     logger.info("✅ Killed agent worktree '%s'", slug)
-    return {"killed": slug}
+    hx_trigger = json.dumps({"toast": {"message": f"Agent {slug} killed", "type": "success"}})
+    return JSONResponse(content={"killed": slug}, headers={"HX-Trigger": hx_trigger})
