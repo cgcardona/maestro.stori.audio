@@ -836,13 +836,15 @@ STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
 
   # Leave an audit trail: which cognitive identity claimed this issue.
   AGENT_SESSION="eng-$(date -u +%Y%m%dT%H%M%SZ)-$(printf '%04x' $RANDOM)"
+  CLAIMED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
   CLAIM_FINGERPRINT=$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "${COGNITIVE_ARCH:-unset}" \
     --fingerprint \
     --role "${ROLE:-python-developer}" \
     --session "$AGENT_SESSION" \
     --batch "${BATCH_ID:-none}" \
     --wave "${WAVE:-unset}" \
-    --vp "${VP_FINGERPRINT:-unset}" 2>/dev/null)
+    --vp "${VP_FINGERPRINT:-unset}" \
+    --started-at "$CLAIMED_AT" 2>/dev/null)
   # Fallback: if resolve_arch.py is unavailable or returned nothing, build the table in shell.
   # This ensures a consistent <details> table appears even when Python/PyYAML is absent.
   # ⚠️  Row labels MUST match render_fingerprint() exactly — this is the single source of truth.
@@ -1302,16 +1304,35 @@ STEP 5 — PUSH & CREATE PR:
 
   # Post fingerprint comment on the issue so it's traceable even if the claim
   # step was skipped (e.g. issue opened manually rather than claimed from pool).
-  gh issue comment <N> --repo "$GH_REPO" \
-    --body "🤖 **Implemented by agent** — PR #${MY_PR_NUM:-?}
-
-$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "${COGNITIVE_ARCH:-unset}" \
+  # Reuse $PR_CREATED_AT so "Implemented" timestamp matches the PR creation moment.
+  IMPL_FINGERPRINT=$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "${COGNITIVE_ARCH:-unset}" \
     --fingerprint \
     --role "${ROLE:-python-developer}" \
     --session "${AGENT_SESSION:-unset}" \
     --batch "${BATCH_ID:-none}" \
     --wave "${WAVE:-unset}" \
-    --vp "${VP_FINGERPRINT:-unset}")" 2>/dev/null || true
+    --vp "${VP_FINGERPRINT:-unset}" \
+    --started-at "${PR_CREATED_AT:-$(date -u '+%Y-%m-%dT%H:%M:%SZ')}" 2>/dev/null)
+  if [ -z "$IMPL_FINGERPRINT" ]; then
+    IMPL_FINGERPRINT="<details>
+<summary>🤖 Agent Fingerprint</summary>
+
+| | |
+|---|---|
+| **Role** | \`${ROLE:-python-developer}\` |
+| **Architecture** | \`${COGNITIVE_ARCH:-unset}\` |
+| **Session** | \`${AGENT_SESSION:-unset}\` |
+| **CTO Wave** | \`${WAVE:-unset}\` |
+| **VP Batch** | \`${BATCH_ID:-none}\` |
+| **VP** | \`${VP_FINGERPRINT:-unset}\` |
+| **Timestamp** | \`${PR_CREATED_AT:-$(date -u '+%Y-%m-%dT%H:%M:%SZ')}\` |
+
+</details>"
+  fi
+  gh issue comment <N> --repo "$GH_REPO" \
+    --body "🤖 **Implemented by agent** — PR #${MY_PR_NUM:-?}
+
+$IMPL_FINGERPRINT" 2>/dev/null || true
 
   # Transition status label: in-progress → pr-open
   gh issue edit <N> --repo "$GH_REPO" \
@@ -2880,19 +2901,18 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
   # 6. Clear agent:wip now that the PR is merged — it must not persist on closed PRs.
        gh pr edit <N> --repo "$GH_REPO" --remove-label "agent:wip" 2>/dev/null || true
 
-  # 7. Delete the remote branch manually (now safe — merge is done):
-  # NOTE: GitHub auto-delete-head-branches is ENABLED on this repo.
-  # The explicit push --delete here is belt-and-suspenders: it handles the
-  # case where auto-delete races with a local delete or the setting is toggled off.
-       git push origin --delete "$BRANCH" 2>&1 || echo "⚠️  Remote branch delete failed or already deleted — continuing"
-
-  # Verify remote branch is gone:
+  # 7. Delete the remote branch — CHECK EXISTENCE FIRST.
+  # GitHub auto-delete-head-branches is ENABLED on this repo, so the branch is
+  # usually already gone by the time we reach this step. Attempting push --delete
+  # on a non-existent branch always produces an error even with || true, which is
+  # noisy and confusing. Check with ls-remote first; only delete if still present.
+       git fetch --prune 2>/dev/null || true
        STILL_EXISTS=$(git ls-remote --heads origin "$BRANCH" | wc -l | tr -d ' ')
        if [ "$STILL_EXISTS" -gt 0 ]; then
-         echo "⚠️  Remote branch $BRANCH still exists — retrying deletion"
-         git push origin --delete "$BRANCH" 2>&1 || echo "⚠️  Branch delete failed or already deleted"
+         echo "🗑️  Remote branch $BRANCH still exists — deleting..."
+         git push origin --delete "$BRANCH" 2>&1 || echo "⚠️  Branch delete failed — may need manual cleanup"
        else
-         echo "✅ Remote branch $BRANCH deleted"
+         echo "✅ Remote branch $BRANCH already removed (GitHub auto-delete)."
        fi
 
   # 8. Post a fingerprint comment on the PR so every merge is permanently traceable:
@@ -2937,14 +2957,14 @@ $CLOSE_FINGERPRINT"
        export GH_REPO
        if [ -n "$CLOSES_ISSUES" ]; then
          echo "$CLOSES_ISSUES" | tr ',' '\n' | xargs -I{} sh -c \
-           'gh issue close {} --comment "$CLOSE_COMMENT" --repo "$GH_REPO"; gh issue edit {} --remove-label "agent:wip" --repo "$GH_REPO" 2>/dev/null || true'
+           'gh issue close {} --comment "$CLOSE_COMMENT" --repo "$GH_REPO" 2>/dev/null || true; gh issue edit {} --remove-label "agent:wip" --repo "$GH_REPO" 2>/dev/null || true'
        else
          # Fallback: re-parse the PR body if CLOSES_ISSUES was empty in task file
          gh pr view "$N" --json body --jq '.body' \
            | grep -oE '[Cc]loses?\s+#[0-9]+' \
            | grep -oE '[0-9]+' \
            | xargs -I{} sh -c \
-               'gh issue close {} --comment "$CLOSE_COMMENT" --repo "$GH_REPO"; gh issue edit {} --remove-label "agent:wip" --repo "$GH_REPO" 2>/dev/null || true'
+               'gh issue close {} --comment "$CLOSE_COMMENT" --repo "$GH_REPO" 2>/dev/null || true; gh issue edit {} --remove-label "agent:wip" --repo "$GH_REPO" 2>/dev/null || true'
        fi
 
   ⚠️  Never use --delete-branch with gh pr merge in a multi-worktree setup.
@@ -2963,6 +2983,15 @@ $CLOSE_FINGERPRINT"
   #    working copy reflects reality and the next batch starts from the true tip.
   #    This is the step that prevents "relation does not exist" DB errors when the
   #    coordinator tries to apply migrations before fetching.
+  #
+  #    ⚠️  COMMIT GUARD — the main repo may have uncommitted files (e.g. from a
+  #    previous agent run that wrote directly to the main worktree, or from generate.py
+  #    updating role files). An uncommitted working tree aborts git merge. Commit
+  #    whatever is there so the merge can proceed cleanly.
+  git -C "$REPO" add -A
+  git -C "$REPO" diff --cached --quiet || git -C "$REPO" commit -m "chore: save main repo state before post-merge dev sync
+
+Maestro-Session: ${AGENT_SESSION:-unset}"
   git -C "$REPO" fetch origin
   git -C "$REPO" merge origin/dev
 
@@ -2971,7 +3000,12 @@ STEP 7 — REGRESSION FEEDBACK LOOP (only if merge succeeded — skip if D/F gra
   introduced by this batch. Any new failures become GitHub issues automatically
   and re-enter the pipeline — no human triage required.
 
-  # Pull the latest dev (contains the just-merged PR):
+  # Pull the latest dev (contains the just-merged PR).
+  # ⚠️  COMMIT GUARD: same as step 6.9 — guard against uncommitted main-repo state.
+  git -C "$REPO" add -A
+  git -C "$REPO" diff --cached --quiet || git -C "$REPO" commit -m "chore: save main repo state before regression-feedback dev sync
+
+Maestro-Session: ${AGENT_SESSION:-unset}"
   git -C "$REPO" fetch origin && git -C "$REPO" merge origin/dev
 
   # Run TARGETED tests only — never the full suite.
