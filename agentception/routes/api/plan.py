@@ -72,6 +72,11 @@ class PlanDraftResponse(BaseModel):
 
     The caller should poll or subscribe for progress; this endpoint is
     intentionally fire-and-forget from the HTTP perspective.
+
+    ``output_path`` is the absolute path of the YAML file the Cursor agent will
+    write when it completes — not the worktree directory.  The AgentCeption
+    poller watches this path and emits a ``task_output_ready`` SSE event when
+    the file appears.
     """
 
     draft_id: str
@@ -96,6 +101,10 @@ async def post_plan_draft(request: PlanDraftRequest) -> PlanDraftResponse:
     draft_id = str(uuid.uuid4())
     worktree_path = _WORKTREES_BASE / f"plan-draft-{draft_id}"
     task_file_path = worktree_path / ".agent-task"
+    # The output file is where the Cursor agent writes the finished PlanSpec YAML.
+    # The AgentCeption poller watches *this file* (not the directory) and emits
+    # ``task_output_ready`` when it appears on disk.
+    output_file_path = worktree_path / ".plan-output.yaml"
 
     logger.info("✅ Plan draft %s — creating worktree at %s", draft_id, worktree_path)
 
@@ -124,8 +133,14 @@ async def post_plan_draft(request: PlanDraftRequest) -> PlanDraftResponse:
     task_content = (
         f"WORKFLOW=plan-spec\n"
         f"DRAFT_ID={draft_id}\n"
-        f"OUTPUT_PATH={worktree_path}\n"
+        # OUTPUT_PATH must be a file path (not the directory) so the AgentCeption
+        # poller can watch for the file's appearance and emit task_output_ready.
+        f"OUTPUT_PATH={output_file_path}\n"
         f"STATUS=pending\n"
+        # Guide the Cursor agent: call plan_get_schema() first to get the PlanSpec
+        # TOML schema, then produce valid TOML matching that schema.
+        f"mcp_tools_hint=call plan_get_schema() to get the PlanSpec TOML schema first\n"
+        f"output_schema=plan_get_schema\n"
         f"plan_draft.dump={request.dump}\n"
     )
     task_file_path.write_text(task_content, encoding="utf-8")
@@ -135,7 +150,7 @@ async def post_plan_draft(request: PlanDraftRequest) -> PlanDraftResponse:
     return PlanDraftResponse(
         draft_id=draft_id,
         task_file=str(task_file_path),
-        output_path=str(worktree_path),
+        output_path=str(output_file_path),
         status="pending",
     )
 
