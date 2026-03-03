@@ -73,6 +73,35 @@
     </div>
   </nav>
 
+  {# Wizard stepper — initial state rendered server-side; refreshed via HTMX every 10 s #}
+  {% set _wizard_state = wizard_state if wizard_state is defined else none %}
+  {% if _wizard_state %}
+    {% include '_wizard_stepper.html' %}
+  {% else %}
+    <nav class="wizard-stepper"
+         aria-label="Guided workflow"
+         id="wizard-stepper"
+         hx-get="/api/wizard/state"
+         hx-trigger="load, every 10s"
+         hx-target="#wizard-stepper"
+         hx-swap="outerHTML">
+      <a href="/brain-dump" class="wizard-step wizard-step--active">
+        <span class="wizard-step__number">1</span>
+        <span class="wizard-step__label">Brain Dump</span>
+      </a>
+      <span class="wizard-stepper__arrow" aria-hidden="true">→</span>
+      <a href="/org-chart" class="wizard-step wizard-step--future">
+        <span class="wizard-step__number">2</span>
+        <span class="wizard-step__label">Org Chart</span>
+      </a>
+      <span class="wizard-stepper__arrow" aria-hidden="true">→</span>
+      <a href="/controls" class="wizard-step wizard-step--future">
+        <span class="wizard-step__number">3</span>
+        <span class="wizard-step__label">Launch Wave</span>
+      </a>
+    </nav>
+  {% endif %}
+
   <main id="main-content" role="main">
     {% block content %}
     <div class="card">
