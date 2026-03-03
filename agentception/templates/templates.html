@@ -2,288 +2,107 @@
 
 {% block title %}Templates — AgentCeption{% endblock %}
 
-{% block head %}
-<style>
-  .templates-layout {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    max-width: 780px;
-  }
-
-  .tpl-section {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 1.25rem 1.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .tpl-section h2 {
-    font-size: 0.9rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--text-muted);
-    margin: 0 0 0.25rem 0;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .form-row {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-  }
-
-  .form-row label {
-    flex: 0 0 80px;
-    font-size: 0.88rem;
-    color: var(--text-muted);
-  }
-
-  .form-row input[type="text"],
-  .form-row input[type="file"] {
-    flex: 1;
-    min-width: 180px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text-primary);
-    font-size: 0.88rem;
-    padding: 0.4rem 0.65rem;
-    outline: none;
-    transition: border-color 0.15s;
-    font-family: inherit;
-  }
-
-  .form-row input[type="text"]:focus {
-    border-color: var(--accent);
-  }
-
-  .btn-primary {
-    background: var(--accent);
-    border: 1px solid var(--accent);
-    border-radius: 4px;
-    color: #fff;
-    cursor: pointer;
-    font-size: 0.88rem;
-    font-weight: 600;
-    padding: 0.45rem 1.1rem;
-    transition: opacity 0.1s;
-    white-space: nowrap;
-  }
-
-  .btn-primary:hover { opacity: 0.85; }
-  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
-
-  .toast {
-    font-size: 0.85rem;
-    padding: 0.35rem 0.75rem;
-    border-radius: 4px;
-    display: none;
-  }
-
-  .toast.ok {
-    display: inline-block;
-    background: rgba(76, 175, 80, 0.15);
-    color: #81c784;
-    border: 1px solid rgba(76, 175, 80, 0.35);
-  }
-
-  .toast.err {
-    display: inline-block;
-    background: rgba(244, 67, 54, 0.15);
-    color: #e57373;
-    border: 1px solid rgba(244, 67, 54, 0.35);
-  }
-
-  /* ── Stored templates table ─────────────────────────────────────────────── */
-
-  .tpl-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.85rem;
-  }
-
-  .tpl-table th {
-    text-align: left;
-    padding: 0.4rem 0.6rem;
-    color: var(--text-muted);
-    font-weight: 600;
-    font-size: 0.78rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .tpl-table td {
-    padding: 0.5rem 0.6rem;
-    border-bottom: 1px solid var(--border);
-    color: var(--text-primary);
-    vertical-align: middle;
-  }
-
-  .tpl-table tr:last-child td {
-    border-bottom: none;
-  }
-
-  .tpl-table .tpl-name {
-    font-weight: 600;
-  }
-
-  .tpl-table .tpl-version {
-    font-family: monospace;
-    color: var(--accent);
-  }
-
-  .tpl-table .tpl-date {
-    font-family: monospace;
-    font-size: 0.8rem;
-    color: var(--text-muted);
-  }
-
-  .tpl-table .tpl-size {
-    font-family: monospace;
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    text-align: right;
-  }
-
-  .btn-download {
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--accent);
-    cursor: pointer;
-    font-size: 0.8rem;
-    padding: 0.25rem 0.6rem;
-    text-decoration: none;
-    display: inline-block;
-    transition: background 0.1s, border-color 0.1s;
-  }
-
-  .btn-download:hover {
-    background: rgba(124, 58, 237, 0.12);
-    border-color: var(--accent);
-  }
-
-  /* ── Conflict warning list ─────────────────────────────────────────────── */
-  .conflict-list {
-    list-style: none;
-    padding: 0;
-    margin: 0.5rem 0 0 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .conflict-item {
-    font-family: monospace;
-    font-size: 0.8rem;
-    color: var(--danger);
-    padding: 0.2rem 0.4rem;
-    background: rgba(248, 81, 73, 0.08);
-    border-radius: 3px;
-  }
-
-  .empty-state {
-    color: var(--text-muted);
-    font-size: 0.88rem;
-    padding: 0.5rem 0;
-  }
-</style>
-{% endblock %}
-
 {% block content %}
-<div class="templates-layout">
+<div class="tpl-layout">
 
-  <!-- ── Export section ────────────────────────────────────────────────────── -->
-  <div class="tpl-section" x-data="exportPanel()">
-    <h2>Export current pipeline</h2>
+  <header class="tpl-page-header">
+    <h1 class="tpl-page-title">Role Templates</h1>
+    <p class="tpl-page-subtitle">Export, import, and browse pipeline configuration bundles.</p>
+  </header>
 
-    <div class="form-row">
-      <label for="tpl-name">Name</label>
+  {# ── Export section ──────────────────────────────────────────────────────── #}
+  <section class="tpl-section" x-data="exportPanel()" aria-labelledby="tpl-export-heading">
+    <h2 id="tpl-export-heading" class="tpl-section-title">Export current pipeline</h2>
+
+    <div class="tpl-form-row">
+      <label class="tpl-form-label" for="tpl-name">Name</label>
       <input id="tpl-name"
+             class="tpl-input"
              type="text"
              placeholder="e.g. maestro-pipeline"
              x-model.trim="name"
              aria-label="Template name" />
     </div>
 
-    <div class="form-row">
-      <label for="tpl-ver">Version</label>
+    <div class="tpl-form-row">
+      <label class="tpl-form-label" for="tpl-ver">Version</label>
       <input id="tpl-ver"
+             class="tpl-input"
              type="text"
              placeholder="e.g. 1.0.0"
              x-model.trim="version"
              aria-label="Template version" />
     </div>
 
-    <div class="form-row">
-      <button class="btn-primary"
+    <div class="tpl-form-row">
+      <button class="tpl-btn-primary"
               type="button"
               :disabled="busy || !name || !version"
               @click="doExport()"
               x-text="busy ? 'Exporting…' : 'Export'">Export</button>
 
-      <span class="toast" :class="toast.cls" x-text="toast.msg" role="status" aria-live="polite"></span>
+      <span class="tpl-toast"
+            :class="toast.cls"
+            x-text="toast.msg"
+            role="status"
+            aria-live="polite"></span>
     </div>
-  </div>
+  </section>
 
-  <!-- ── Import section ────────────────────────────────────────────────────── -->
-  <div class="tpl-section" x-data="importPanel()">
-    <h2>Import template</h2>
+  {# ── Import section ──────────────────────────────────────────────────────── #}
+  <section class="tpl-section" x-data="importPanel()" aria-labelledby="tpl-import-heading">
+    <h2 id="tpl-import-heading" class="tpl-section-title">Import template</h2>
 
-    <div class="form-row">
-      <label for="tpl-file">Archive</label>
+    <div class="tpl-form-row">
+      <label class="tpl-form-label" for="tpl-file">Archive</label>
       <input id="tpl-file"
+             class="tpl-input"
              type="file"
              accept=".tar.gz,.gz"
              @change="onFileChange($event)"
              aria-label="Template archive file" />
     </div>
 
-    <div class="form-row">
-      <label for="tpl-repo">Target repo</label>
+    <div class="tpl-form-row">
+      <label class="tpl-form-label" for="tpl-repo">Target repo</label>
       <input id="tpl-repo"
+             class="tpl-input"
              type="text"
              placeholder="/absolute/path/to/repo"
              x-model.trim="targetRepo"
              aria-label="Target repository path" />
     </div>
 
-    <div class="form-row">
-      <button class="btn-primary"
+    <div class="tpl-form-row">
+      <button class="tpl-btn-primary"
               type="button"
               :disabled="busy || !file || !targetRepo"
               @click="doImport()"
               x-text="busy ? 'Importing…' : 'Import'">Import</button>
 
-      <span class="toast" :class="toast.cls" x-text="toast.msg" role="status" aria-live="polite"></span>
+      <span class="tpl-toast"
+            :class="toast.cls"
+            x-text="toast.msg"
+            role="status"
+            aria-live="polite"></span>
     </div>
 
-    <!-- Conflict list rendered after a successful import -->
+    {# Conflict list — rendered by Alpine after a successful import #}
     <template x-if="conflicts.length > 0">
       <div>
-        <p style="font-size:0.85rem;color:#e57373;margin:0 0 0.35rem 0;">
-          ⚠️ The following files were overwritten:
-        </p>
-        <ul class="conflict-list">
+        <p class="tpl-conflict-warning">⚠️ The following files were overwritten:</p>
+        <ul class="tpl-conflict-list">
           <template x-for="c in conflicts" :key="c.path">
-            <li class="conflict-item" x-text="c.path"></li>
+            <li class="tpl-conflict-item" x-text="c.path"></li>
           </template>
         </ul>
       </div>
     </template>
-  </div>
+  </section>
 
-  <!-- ── Stored templates ──────────────────────────────────────────────────── -->
-  <div class="tpl-section">
-    <h2>Exported templates</h2>
+  {# ── Stored templates ────────────────────────────────────────────────────── #}
+  <section class="tpl-section" aria-labelledby="tpl-stored-heading">
+    <h2 id="tpl-stored-heading" class="tpl-section-title">Exported templates</h2>
 
     {% if stored_templates %}
     <table class="tpl-table" aria-label="Previously exported templates">
@@ -293,20 +112,20 @@
           <th>Version</th>
           <th>Repo</th>
           <th>Exported at</th>
-          <th class="tpl-size">Size</th>
+          <th class="tpl-cell-size">Size</th>
           <th></th>
         </tr>
       </thead>
       <tbody>
         {% for tpl in stored_templates %}
         <tr>
-          <td class="tpl-name">{{ tpl.name }}</td>
-          <td class="tpl-version">{{ tpl.version }}</td>
-          <td style="font-size:0.8rem;color:var(--text-muted);font-family:monospace">{{ tpl.gh_repo }}</td>
-          <td class="tpl-date">{{ tpl.created_at[:19].replace("T", " ") }}</td>
-          <td class="tpl-size">{{ (tpl.size_bytes / 1024) | round(1) }} KB</td>
-          <td>
-            <a class="btn-download"
+          <td class="tpl-cell-name">{{ tpl.name }}</td>
+          <td class="tpl-cell-version">{{ tpl.version }}</td>
+          <td class="tpl-cell-repo" title="{{ tpl.gh_repo }}">{{ tpl.gh_repo }}</td>
+          <td class="tpl-cell-date">{{ tpl.created_at[:19].replace("T", " ") }}</td>
+          <td class="tpl-cell-size">{{ (tpl.size_bytes / 1024) | round(1) }} KB</td>
+          <td class="tpl-cell-action">
+            <a class="tpl-btn-download"
                href="/api/templates/{{ tpl.filename }}"
                download="{{ tpl.filename }}"
                aria-label="Download {{ tpl.filename }}">
@@ -318,11 +137,9 @@
       </tbody>
     </table>
     {% else %}
-    <p class="empty-state">No templates exported yet. Use the form above to create your first one.</p>
+    <p class="tpl-empty">No templates exported yet. Use the export form above to create your first one.</p>
     {% endif %}
-  </div>
+  </section>
 
 </div>
-
-{# exportPanel() and importPanel() live in /static/app.js #}
 {% endblock %}

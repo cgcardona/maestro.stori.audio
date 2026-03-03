@@ -26,6 +26,7 @@
 //     _roles.scss       Cognitive Architecture Studio
 //     _agents.scss      Agents list page
 //     _config.scss      Pipeline Config page
+//     _templates.scss   Templates (export / import / sandbox) page
 //
 // Compilation
 // ───────────
@@ -54,3 +55,4 @@
 @use 'pages/agents';
 @use 'pages/config';
 @use 'pages/dag';
+@use 'pages/templates';
