@@ -14,7 +14,7 @@
 
 <div
   class="agents-page"
-  x-data="agentsPage({{ batches | tojson | e }}, {{ gh_base_url | tojson }})"
+  x-data='agentsPage({{ batches | tojson }}, {{ gh_base_url | tojson }})'
   x-init="init()"
 >
 
