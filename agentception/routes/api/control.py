@@ -15,13 +15,21 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from agentception.config import settings
-from agentception.models import SpawnCoordinatorRequest, SpawnCoordinatorResult, SpawnRequest, SpawnResult
+from agentception.models import (
+    SpawnConductorRequest,
+    SpawnConductorResult,
+    SpawnCoordinatorRequest,
+    SpawnCoordinatorResult,
+    SpawnRequest,
+    SpawnResult,
+)
 from agentception.readers.active_label_override import clear_pin, get_pin, set_pin
 from agentception.readers.github import add_wip_label, get_active_label, get_issue, get_issue_body, get_open_issues
 from agentception.readers.pipeline_config import read_pipeline_config
 from ._shared import (
     _SENTINEL,
     _build_agent_task,
+    _build_conductor_task,
     _build_coordinator_task,
     _issue_is_claimed_api,
     _resolve_cognitive_arch,
@@ -625,6 +633,103 @@ async def spawn_coordinator(body: SpawnCoordinatorRequest) -> SpawnCoordinatorRe
 
     return SpawnCoordinatorResult(
         slug=slug,
+        worktree=str(worktree_path),
+        host_worktree=str(host_worktree_path),
+        branch=branch,
+        agent_task=agent_task_content,
+    )
+
+
+@router.post("/control/spawn-conductor", tags=["control"])
+async def spawn_conductor(body: SpawnConductorRequest) -> SpawnConductorResult:
+    """Seed a conductor worktree that orchestrates a multi-phase wave.
+
+    Creates a git worktree and writes an ``.agent-task`` file that tells a
+    Cursor background agent to run as a conductor across the provided phases.
+    The conductor will spawn sub-agents for every unclaimed issue in each phase
+    without requiring manual intervention per-issue.
+
+    This endpoint only creates the worktree and task file.  The caller
+    (AgentCeption UI) instructs the user to open the returned
+    ``host_worktree`` path in Cursor to start the conductor agent.
+
+    Raises
+    ------
+    HTTP 409
+        When a worktree with the same wave_id already exists.
+    HTTP 422
+        When ``phases`` is empty.
+    HTTP 500
+        When ``git worktree add`` fails.
+    """
+    from agentception.db.persist import persist_wave_start
+
+    if not body.phases:
+        raise HTTPException(status_code=422, detail="phases must not be empty")
+
+    wave_id = f"conductor-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
+    slug = wave_id
+    branch = f"feat/{slug}"
+    worktree_path = settings.worktrees_dir / slug
+    host_worktree_path = settings.host_worktrees_dir / slug
+
+    if worktree_path.exists():
+        raise HTTPException(
+            status_code=409,
+            detail=f"Worktree '{slug}' already exists — wait a second and retry.",
+        )
+
+    repo_dir = str(settings.repo_dir)
+
+    proc = await asyncio.create_subprocess_exec(
+        "git", "-C", repo_dir,
+        "worktree", "add", "-b", branch,
+        str(worktree_path), "origin/dev",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _stdout, stderr = await proc.communicate()
+
+    if proc.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"git worktree add failed (exit {proc.returncode}): "
+                f"{stderr.decode().strip()!r}"
+            ),
+        )
+
+    lock_proc = await asyncio.create_subprocess_exec(
+        "git", "-C", repo_dir,
+        "worktree", "lock", str(worktree_path),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    await lock_proc.communicate()  # best-effort — non-fatal if it fails
+
+    logger.info(
+        "✅ Created conductor worktree %s on branch %s (phases=%s)",
+        worktree_path,
+        branch,
+        body.phases,
+    )
+
+    agent_task_content = _build_conductor_task(
+        wave_id=wave_id,
+        phases=body.phases,
+        org=body.org,
+        worktree=worktree_path,
+        host_worktree=host_worktree_path,
+        branch=branch,
+    )
+    task_file = worktree_path / ".agent-task"
+    task_file.write_text(agent_task_content, encoding="utf-8")
+    logger.info("✅ Wrote conductor .agent-task to %s", task_file)
+
+    await persist_wave_start(wave_id, ",".join(body.phases), "conductor")
+
+    return SpawnConductorResult(
+        wave_id=wave_id,
         worktree=str(worktree_path),
         host_worktree=str(host_worktree_path),
         branch=branch,

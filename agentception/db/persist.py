@@ -30,6 +30,7 @@ from agentception.db.models import (
     ACPipelineSnapshot,
     ACPullRequest,
     ACRoleVersion,
+    ACWave,
 )
 
 if TYPE_CHECKING:
@@ -368,6 +369,57 @@ async def persist_role_version(role_name: str, content: str) -> None:
                 logger.info("📸 Role version snapshot: %s (%s…)", role_name, content_hash[:8])
     except Exception as exc:
         logger.warning("⚠️  persist_role_version failed (non-fatal): %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Wave lifecycle (conductor-spawn entry points)
+# ---------------------------------------------------------------------------
+
+
+async def persist_wave_start(wave_id: str, phase_label: str, role: str) -> None:
+    """Insert a new ACWave row at conductor-spawn time.
+
+    Best-effort — all exceptions are swallowed so a DB outage never blocks
+    the spawn endpoint.  The wave_id is the primary key; duplicate inserts
+    are silently ignored via the except clause.
+    """
+    try:
+        async with get_session() as session:
+            session.add(
+                ACWave(
+                    id=wave_id,
+                    phase_label=phase_label,
+                    role=role,
+                    started_at=_now(),
+                    completed_at=None,
+                    spawn_count=0,
+                    skip_count=0,
+                )
+            )
+            await session.commit()
+    except Exception as exc:
+        logger.warning("⚠️  persist_wave_start failed (non-fatal): %s", exc)
+
+
+async def persist_wave_complete(wave_id: str, spawn_count: int, skip_count: int) -> None:
+    """Update an existing ACWave row with final spawn/skip counts and completed_at.
+
+    Best-effort — all exceptions are swallowed so a DB outage never blocks
+    the spawn endpoint.  No-ops when the row does not exist.
+    """
+    try:
+        async with get_session() as session:
+            result = await session.execute(
+                select(ACWave).where(ACWave.id == wave_id)
+            )
+            wave = result.scalar_one_or_none()
+            if wave is not None:
+                wave.spawn_count = spawn_count
+                wave.skip_count = skip_count
+                wave.completed_at = _now()
+                await session.commit()
+    except Exception as exc:
+        logger.warning("⚠️  persist_wave_complete failed (non-fatal): %s", exc)
 
 
 # ---------------------------------------------------------------------------
