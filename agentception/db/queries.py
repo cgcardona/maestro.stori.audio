@@ -720,17 +720,25 @@ async def get_issues_grouped_by_phase(repo: str) -> list[dict[str, Any]]:
             )
             rows = result.scalars().all()
 
-        # Group by phase label
+        # Group by phase label.
+        # Prefer a "phase-N" GitHub label from labels_json (works for any
+        # initiative) over the legacy phase_label column (which was set from
+        # the pipeline's active_label at poll time and is often wrong or None
+        # for issues created outside the active pipeline window).
         groups: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
-            label = row.phase_label or "unphased"
-            groups.setdefault(label, []).append(
+            issue_labels: list[str] = json.loads(row.labels_json or "[]")
+            phase_key = next(
+                (lbl for lbl in issue_labels if lbl.startswith("phase-")),
+                None,
+            ) or row.phase_label or "unphased"
+            groups.setdefault(phase_key, []).append(
                 {
                     "number": row.github_number,
                     "title": row.title,
                     "state": row.state,
                     "url": f"https://github.com/{repo}/issues/{row.github_number}",
-                    "labels": json.loads(row.labels_json or "[]"),
+                    "labels": issue_labels,
                 }
             )
 
