@@ -62,6 +62,23 @@ When uncertain: (1) preserve existing patterns, (2) prefer smaller changes over 
 - **MIDI pipeline:** `select_seed()` → transpose → control vector → Gradio → score candidates → post-process → `parse_midi_to_notes()` → `filter_channels_for_instruments()` → notes to Maestro.
 - When adding GM aliases: extend `_GM_ALIASES` AND add parametrized cases in `test_gm_resolution.py`.
 
+## JS / CSS build discipline
+
+The browser loads **compiled bundles**, not source files directly:
+
+| Source | Bundle | Build command |
+|--------|--------|---------------|
+| `agentception/static/js/**/*.js` | `agentception/static/app.js` | `npm run build:js` |
+| `agentception/static/scss/**/*.scss` | `agentception/static/app.css` | `npm run build:css` |
+| both | both | `npm run build` |
+
+**Rules:**
+- After editing any `.js` file under `static/js/`, run `npm run build:js` before committing.
+- After editing any `.scss` file under `static/scss/`, run `npm run build:css` before committing.
+- When in doubt, run `npm run build` (does both).
+- The pre-commit hook in `.git/hooks/pre-commit` enforces this automatically: if JS/SCSS source files are staged it rebuilds the affected bundle and re-stages the output. But don't rely on it — run the build yourself first.
+- Never commit source changes to `static/js/` or `static/scss/` without a matching update to the bundle. A stale bundle is a silent runtime bug.
+
 ## Anti-patterns (never do these)
 
 - **No legacy, no deprecated, no backwards compatibility.** Frontend and backend ship in lockstep. Remove dead code, dead fields, dead endpoints on sight. Never add fallback paths for old API shapes. If a field or function is unused, delete it — don't leave it "for backwards compatibility."
