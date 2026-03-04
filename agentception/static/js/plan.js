@@ -19,11 +19,11 @@
  *     Claude (via AgentCeption → OpenRouter) returns a PlanSpec YAML.
  *     No MCP, no Cursor, no worktrees involved here.
  *
- *   POST /api/plan/launch   { yaml_text }
- *     → { batch_id, branch, worktree }
- *     AgentCeption validates the YAML, writes a coordinator .agent-task, and
- *     creates a worktree.  The coordinator agent running in Cursor then calls
- *     plan_get_labels() and similar MCP tools as it files GitHub issues.
+ *   POST /api/plan/file-issues  { yaml_text }  (SSE stream)
+ *     AgentCeption validates the YAML, ensures GitHub labels exist, then
+ *     creates issues phase-by-phase using gh CLI.  No agents, no LLM calls.
+ *     The SSE stream reports progress per-issue so the user sees real-time
+ *     filing status.  On done, the UI flips to the success state with links.
  *
  * CodeMirror 6 is bundled by esbuild — no CDN, no Web Workers, no AMD loader.
  * This avoids the cross-origin worker crashes that affect Monaco CDN usage.
@@ -53,6 +53,10 @@ export function planForm() {
     initiative: '',
     phaseCount: 0,
     issueCount: 0,
+
+    // ── Filing progress (from /api/plan/file-issues SSE stream) ───────────
+    filingProgress: '',     // e.g. "Filing 3 / 8 — phase-1"
+    filedIssues: [],        // [{number, url, title, phase}] filled as issues arrive
 
     // ── YAML validation ────────────────────────────────────────────────────
     yamlValid: true,
@@ -224,7 +228,9 @@ export function planForm() {
       });
     },
 
-    // ── Step 1.B: POST /api/plan/launch — submit (possibly edited) YAML ───
+    // ── Step 1.B: POST /api/plan/file-issues — create GitHub issues ────────
+    // Consumes an SSE stream that reports progress as each issue is filed.
+    // The old /api/plan/launch endpoint (coordinator worktrees) is untouched.
 
     async launch() {
       const yaml = this._getEditorValue();
@@ -234,10 +240,13 @@ export function planForm() {
         return;
       }
       this.errorMsg = '';
+      this.filingProgress = 'Setting up labels…';
+      this.filedIssues = [];
       this.step = 'launching';
       this.submitting = true;
+
       try {
-        const resp = await fetch('/api/plan/launch', {
+        const resp = await fetch('/api/plan/file-issues', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ yaml_text: yaml }),
@@ -246,7 +255,70 @@ export function planForm() {
           const body = await resp.json().catch(() => ({}));
           throw new Error(body.detail || `HTTP ${resp.status}`);
         }
-        this.result = await resp.json();
+
+        // Read the SSE stream.  Event types:
+        //   {"t":"start",   "total":N, "initiative":"..."}
+        //   {"t":"label",   "text":"..."}
+        //   {"t":"issue",   "index":N, "total":N, "number":N, "url":"...",
+        //                   "title":"...", "phase":"..."}
+        //   {"t":"blocked", "number":N, "blocked_by":[N,...]}
+        //   {"t":"done",    "total":N, "initiative":"...", "issues":[...]}
+        //   {"t":"error",   "detail":"..."}
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let doneData = null;
+
+        outer: while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const raw = line.slice(6).trim();
+            if (!raw) continue;
+            let msg;
+            try { msg = JSON.parse(raw); } catch { continue; }
+
+            if (msg.t === 'start') {
+              this.filingProgress = `Filing 0 / ${msg.total}…`;
+
+            } else if (msg.t === 'label') {
+              this.filingProgress = msg.text;
+
+            } else if (msg.t === 'issue') {
+              this.filingProgress = `Filing ${msg.index} / ${msg.total} — ${msg.phase}`;
+              this.filedIssues.push({
+                number: msg.number,
+                url: msg.url,
+                title: msg.title,
+                phase: msg.phase,
+              });
+
+            } else if (msg.t === 'blocked') {
+              // Silently noted — body was edited server-side; no UI change needed.
+
+            } else if (msg.t === 'done') {
+              doneData = msg;
+              break outer;
+
+            } else if (msg.t === 'error') {
+              throw new Error(msg.detail || 'Filing issues failed.');
+            }
+          }
+        }
+
+        if (!doneData) throw new Error('Stream ended without a done event.');
+
+        this.result = {
+          initiative: doneData.initiative,
+          total: doneData.total,
+          issues: doneData.issues ?? [],
+        };
         this.step = 'done';
       } catch (err) {
         this.errorMsg = err.message;
@@ -271,6 +343,8 @@ export function planForm() {
       this.issueCount = 0;
       this.yamlValid = true;
       this.yamlValidationMsg = '';
+      this.filingProgress = '';
+      this.filedIssues = [];
       this.result = {};
       if (this._editor) this._setEditorValue('');
     },

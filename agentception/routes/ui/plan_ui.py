@@ -462,6 +462,62 @@ async def plan_validate(body: PlanValidateRequest) -> PlanValidateResponse:
     )
 
 
+class PlanFileIssuesRequest(BaseModel):
+    """Request body for ``POST /api/plan/file-issues`` (Step 1.B).
+
+    ``yaml_text`` must be a valid PlanSpec YAML string, exactly as it appears
+    in the CodeMirror editor after the user has reviewed and (optionally) edited
+    the output from Step 1.A.
+    """
+
+    yaml_text: str
+
+
+@router.post("/api/plan/file-issues")
+async def plan_file_issues(body: PlanFileIssuesRequest) -> StreamingResponse:
+    """Step 1.B — file GitHub issues directly from a PlanSpec YAML via SSE.
+
+    Accepts the (possibly edited) YAML from the CodeMirror editor, validates it
+    against PlanSpec, ensures the required GitHub labels exist, then creates all
+    issues using the ``gh`` CLI — no agents, no LLM calls, no worktrees.
+
+    Streaming protocol (``text/event-stream``)
+    ------------------------------------------
+    Each event is a JSON object on a ``data:`` line followed by ``\\n\\n``::
+
+        {"t": "start",   "total": N, "initiative": "..."}
+        {"t": "label",   "text": "..."}
+        {"t": "issue",   "index": N, "total": N, "number": N,
+                         "url": "...", "title": "...", "phase": "..."}
+        {"t": "blocked", "number": N, "blocked_by": [N, ...]}
+        {"t": "done",    "total": N, "initiative": "...",
+                         "issues": [{number, url, title, phase, issue_id}, ...]}
+        {"t": "error",   "detail": "..."}
+
+    On ``done`` the browser should flip to the success state and render links.
+    On ``error`` the browser should show the detail message and stay in review.
+    """
+    from agentception.models import PlanSpec
+    from agentception.readers.issue_creator import file_issues
+
+    text = body.yaml_text.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="YAML must not be empty.")
+
+    try:
+        spec = PlanSpec.from_yaml(text)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422, detail=f"Invalid PlanSpec YAML: {exc}"
+        ) from exc
+
+    async def _stream() -> AsyncGenerator[str, None]:
+        async for event in file_issues(spec):
+            yield _sse(dict(event))  # TypedDict → plain dict for _sse
+
+    return StreamingResponse(_stream(), media_type="text/event-stream")
+
+
 @router.get("/", response_class=HTMLResponse)
 @router.get("/plan", response_class=HTMLResponse)
 async def plan_page(request: Request) -> HTMLResponse:
