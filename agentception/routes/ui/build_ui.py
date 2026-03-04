@@ -19,7 +19,7 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 from starlette.requests import Request
 
 from agentception.config import settings
@@ -79,11 +79,11 @@ def _available_roles() -> dict[str, list[str]]:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/build", response_class=HTMLResponse)
+@router.get("/build", response_class=HTMLResponse, response_model=None)
 async def build_page(
     request: Request,
     initiative: str | None = Query(default=None),
-) -> HTMLResponse | RedirectResponse:
+) -> Response:
     """Render the Mission Control build page.
 
     When no *initiative* query param is provided, redirects to the first
