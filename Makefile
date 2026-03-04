@@ -30,14 +30,6 @@ test-golden-path:
 	docker compose exec maestro \
 		pytest tests/e2e/test_muse_golden_path.py -v -s
 
-## Compile SCSS → app.css once (requires dart-sass: brew install sass/sass/sass)
-css:
-	sass agentception/static/scss/app.scss agentception/static/app.css
-	@printf '/* !! GENERATED FILE — do not edit directly !!\n   Source: agentception/static/scss/app.scss\n   Compile: make css   (or: sass scss/app.scss app.css)\n   Watch:   make css-watch\n*/\n' | cat - agentception/static/app.css > /tmp/_ac_css && mv /tmp/_ac_css agentception/static/app.css
-
-## Watch SCSS and recompile on save (hot-reload for CSS development)
-css-watch:
-	sass --watch agentception/static/scss/app.scss:agentception/static/app.css
 
 ## Show available targets
 help:
