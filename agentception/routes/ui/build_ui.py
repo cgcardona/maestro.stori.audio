@@ -18,14 +18,15 @@ import logging
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from starlette.requests import Request
 
 from agentception.config import settings
 from agentception.db.queries import (
     get_agent_events_tail,
     get_agent_thoughts_tail,
+    get_initiatives,
     get_issues_grouped_by_phase,
     get_runs_for_issue_numbers,
 )
@@ -79,19 +80,31 @@ def _available_roles() -> dict[str, list[str]]:
 
 
 @router.get("/build", response_class=HTMLResponse)
-async def build_page(request: Request) -> HTMLResponse:
-    """Render the Mission Control build page."""
-    repo = settings.gh_repo
-    groups = await get_issues_grouped_by_phase(repo)
+async def build_page(
+    request: Request,
+    initiative: str | None = Query(default=None),
+) -> HTMLResponse | RedirectResponse:
+    """Render the Mission Control build page.
 
-    all_issue_numbers = [
-        i["number"]
-        for g in groups
-        for i in g["issues"]
-    ]
+    When no *initiative* query param is provided, redirects to the first
+    available initiative so the board is always scoped.  Falls through to
+    the legacy unscoped view only when the DB has no initiative-labelled
+    issues at all.
+    """
+    repo = settings.gh_repo
+    initiatives = await get_initiatives(repo)
+
+    # Auto-select the first initiative when none is specified.
+    if not initiative and initiatives:
+        return RedirectResponse(
+            url=f"/build?initiative={initiatives[0]}", status_code=302
+        )
+
+    groups = await get_issues_grouped_by_phase(repo, initiative=initiative)
+
+    all_issue_numbers = [i["number"] for g in groups for i in g["issues"]]
     runs = await get_runs_for_issue_numbers(all_issue_numbers)
 
-    # Annotate each issue with its run data (if any)
     for group in groups:
         for issue in group["issues"]:
             issue["run"] = runs.get(issue["number"])
@@ -101,6 +114,8 @@ async def build_page(request: Request) -> HTMLResponse:
         {
             "request": request,
             "repo": repo,
+            "initiative": initiative or "",
+            "initiatives": initiatives,
             "groups": groups,
             "role_groups": _available_roles(),
             "total_issues": len(all_issue_numbers),
@@ -114,10 +129,13 @@ async def build_page(request: Request) -> HTMLResponse:
 
 
 @router.get("/build/board", response_class=HTMLResponse)
-async def build_board_partial(request: Request) -> HTMLResponse:
+async def build_board_partial(
+    request: Request,
+    initiative: str | None = Query(default=None),
+) -> HTMLResponse:
     """Return the phase-grouped board as an HTML partial for HTMX polling."""
     repo = settings.gh_repo
-    groups = await get_issues_grouped_by_phase(repo)
+    groups = await get_issues_grouped_by_phase(repo, initiative=initiative)
 
     all_issue_numbers = [i["number"] for g in groups for i in g["issues"]]
     runs = await get_runs_for_issue_numbers(all_issue_numbers)
@@ -131,7 +149,8 @@ async def build_board_partial(request: Request) -> HTMLResponse:
         {
             "request": request,
             "groups": groups,
-            "repo": settings.gh_repo,
+            "repo": repo,
+            "initiative": initiative or "",
         },
     )
 

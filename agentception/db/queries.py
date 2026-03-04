@@ -698,18 +698,72 @@ async def get_conductor_history(
 
 _PHASE_ORDER = ["phase-0", "phase-1", "phase-2", "phase-3"]
 
+# Labels that are never themselves initiative names — common GitHub system labels
+# and AgentCeption internal labels.
+_NON_INITIATIVE_LABELS = frozenset(
+    {
+        "enhancement", "bug", "documentation", "good first issue",
+        "help wanted", "invalid", "question", "wontfix", "duplicate",
+        "feature", "agent:wip", "priority:high", "priority:medium",
+        "priority:low", "needs-triage", "in-progress", "review", "blocked",
+    }
+)
 
-async def get_issues_grouped_by_phase(repo: str) -> list[dict[str, Any]]:
-    """Return open+closed issues grouped by phase, ordered phase-0..3.
+
+async def get_initiatives(repo: str) -> list[str]:
+    """Return alphabetically sorted initiative labels present in the DB.
+
+    An "initiative" label is any GitHub label attached to an issue that:
+    - also carries at least one ``phase-N`` label (new-format issues only)
+    - is not itself a ``phase-N`` label
+    - is not in ``_NON_INITIATIVE_LABELS``
+
+    Falls back to ``[]`` on DB error.
+    """
+    try:
+        async with get_session() as session:
+            result = await session.execute(
+                select(ACIssue.labels_json).where(ACIssue.repo == repo)
+            )
+            rows = result.scalars().all()
+
+        found: set[str] = set()
+        for labels_json_str in rows:
+            labels: list[str] = json.loads(labels_json_str or "[]")
+            if not any(lbl.startswith("phase-") for lbl in labels):
+                continue
+            for lbl in labels:
+                if not lbl.startswith("phase-") and lbl not in _NON_INITIATIVE_LABELS:
+                    found.add(lbl)
+
+        return sorted(found)
+    except Exception as exc:
+        logger.warning("⚠️  get_initiatives DB query failed (non-fatal): %s", exc)
+        return []
+
+
+async def get_issues_grouped_by_phase(
+    repo: str,
+    initiative: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return issues grouped by phase, ordered phase-0..3.
+
+    When *initiative* is supplied the result is scoped to that initiative:
+    - Only issues carrying that initiative label are included.
+    - All four phases are always present in the result (even if empty) so
+      the UI can render the full gate structure.
+    - No ``"unphased"`` bucket is emitted.
+
+    When *initiative* is ``None`` the legacy behaviour is preserved:
+    phase-0..3 first, then remaining label buckets, then ``"unphased"``.
 
     Each group dict contains:
-    - ``label``      — phase label string
-    - ``issues``     — list of issue dicts (number, title, state, url)
-    - ``locked``     — True when the preceding phase still has open issues
-    - ``complete``   — True when every issue in this phase is closed
+    - ``label``    — phase label string
+    - ``issues``   — list of issue dicts (number, title, state, url, labels)
+    - ``locked``   — True when the preceding phase still has open issues
+    - ``complete`` — True when every issue in this phase is closed
 
-    Issues without a recognised phase label are placed in a trailing
-    ``"unphased"`` group.  Falls back to ``[]`` on DB error.
+    Falls back to ``[]`` on DB error.
     """
     try:
         async with get_session() as session:
@@ -728,10 +782,20 @@ async def get_issues_grouped_by_phase(repo: str) -> list[dict[str, Any]]:
         groups: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
             issue_labels: list[str] = json.loads(row.labels_json or "[]")
+
+            # Initiative filter: skip issues that don't carry this initiative.
+            if initiative and initiative not in issue_labels:
+                continue
+
             phase_key = next(
                 (lbl for lbl in issue_labels if lbl.startswith("phase-")),
                 None,
             ) or row.phase_label or "unphased"
+
+            # In initiative-scoped mode skip the unphased bucket entirely.
+            if initiative and phase_key == "unphased":
+                continue
+
             groups.setdefault(phase_key, []).append(
                 {
                     "number": row.github_number,
@@ -742,7 +806,7 @@ async def get_issues_grouped_by_phase(repo: str) -> list[dict[str, Any]]:
                 }
             )
 
-        # Build ordered list; track which phases are complete for gate logic
+        # Build ordered list; track which phases are complete for gate logic.
         ordered: list[dict[str, Any]] = []
         prev_complete = True
         for phase in _PHASE_ORDER:
@@ -758,17 +822,18 @@ async def get_issues_grouped_by_phase(repo: str) -> list[dict[str, Any]]:
             )
             prev_complete = complete or not issues  # empty phase doesn't block
 
-        # Remaining unrecognised labels
-        for label, issues in groups.items():
-            complete = bool(issues) and all(i["state"] == "closed" for i in issues)
-            ordered.append(
-                {
-                    "label": label,
-                    "issues": issues,
-                    "locked": False,
-                    "complete": complete,
-                }
-            )
+        if not initiative:
+            # Legacy: append remaining label buckets, then unphased.
+            for label, issues in groups.items():
+                complete = bool(issues) and all(i["state"] == "closed" for i in issues)
+                ordered.append(
+                    {
+                        "label": label,
+                        "issues": issues,
+                        "locked": False,
+                        "complete": complete,
+                    }
+                )
 
         return ordered
     except Exception as exc:

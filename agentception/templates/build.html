@@ -21,12 +21,24 @@
     </div>
   </header>
 
+  {# ── initiative tab strip ─────────────────────────────────────────────── #}
+  {% if initiatives %}
+  <nav class="build-initiative-tabs" aria-label="Initiatives">
+    {% for ini in initiatives %}
+    <a class="build-initiative-tab{% if ini == initiative %} build-initiative-tab--active{% endif %}"
+       href="/build?initiative={{ ini }}">
+      {{ ini }}
+    </a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+
   {# ── two-column layout: board + inspector ─────────────────────────────── #}
   <div class="build-columns">
 
     {# ── left: phase board ─────────────────────────────────────────────── #}
     <section class="build-board"
-             hx-get="/build/board"
+             hx-get="/build/board?initiative={{ initiative }}"
              hx-trigger="load, every 10s"
              hx-swap="innerHTML"
     >

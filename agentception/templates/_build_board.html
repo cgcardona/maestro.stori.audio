@@ -1,31 +1,32 @@
 {% for group in groups %}
 {% set closed_count = group.issues | selectattr("state", "equalto", "closed") | list | length %}
 {% set total_count  = group.issues | length %}
-{% set is_unphased  = group.label == "unphased" %}
-{% if group.issues or is_unphased %}
 
 <div class="build-phase
   {%- if group.complete %} build-phase--complete
   {%- elif group.locked %} build-phase--locked
+  {%- elif not group.issues %} build-phase--empty
   {%- else %} build-phase--active
   {%- endif %}"
-  x-data="{ open: {{ 'true' if (not group.locked and not group.complete) else 'false' }} }"
+  x-data="{ open: {{ 'true' if (not group.locked and not group.complete and group.issues) else 'false' }} }"
 >
 
   <div class="build-phase__header" @click="open = !open">
     <span class="build-phase__icon">
-      {%- if group.complete %}✅{%- elif group.locked %}🔒{%- else %}🔓{%- endif %}
+      {%- if group.complete %}✅{%- elif group.locked %}🔒{%- elif not group.issues %}○{%- else %}🔓{%- endif %}
     </span>
     <span class="build-phase__label">{{ group.label }}</span>
     {% if total_count > 0 %}
     <span class="build-phase__progress">{{ closed_count }}&thinsp;/&thinsp;{{ total_count }}</span>
+    {% else %}
+    <span class="build-phase__progress build-phase__progress--empty">no issues</span>
     {% endif %}
     {% if group.locked %}
     <span class="build-phase__gate">locked</span>
     {% endif %}
-    {% if not group.locked and not is_unphased %}
+    {% if not group.locked and group.issues and initiative %}
     <button class="build-phase__launch-btn"
-            @click.stop='$dispatch("open-label-dispatch", { label: {{ group.label | tojson }} })'>
+            @click.stop='$dispatch("open-label-dispatch", { label: {{ initiative | tojson }} })'>
       Launch →
     </button>
     {% endif %}
@@ -50,7 +51,7 @@
         </a>
         {% set ns = namespace(role_label=none) %}
         {% for lbl in issue.labels %}
-          {% if ns.role_label is none and not lbl.startswith('phase-') and lbl != 'unphased' %}
+          {% if ns.role_label is none and not lbl.startswith('phase-') and lbl != initiative %}
             {% set ns.role_label = lbl %}
           {% endif %}
         {% endfor %}
@@ -85,5 +86,4 @@
   {% endif %}
 
 </div>
-{% endif %}
 {% endfor %}

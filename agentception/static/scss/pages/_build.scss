@@ -8,6 +8,44 @@
   display: block; // natural document flow — page scrolls normally
 }
 
+// ── Initiative tab strip ──────────────────────────────────────────────────────
+
+.build-initiative-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 0 1.25rem;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  overflow-x: auto;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
+.build-initiative-tab {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-decoration: none;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px; // overlap the strip's border
+  transition: color 0.15s var(--ease-out), border-color 0.15s var(--ease-out);
+
+  &:hover {
+    color: var(--text-secondary);
+  }
+
+  &--active {
+    color: var(--text-primary);
+    border-bottom-color: var(--accent);
+    font-weight: 600;
+  }
+}
+
 // ── Top bar ───────────────────────────────────────────────────────────────────
 
 .build-header {
@@ -183,6 +221,12 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-full);
   padding: 1px 8px;
+
+  &--empty {
+    font-family: var(--font-sans);
+    font-style: italic;
+    opacity: 0.5;
+  }
 }
 
 .build-phase__gate {
