@@ -27,6 +27,7 @@ from agentception.db.models import (
     ACAgentEvent,
     ACAgentMessage,
     ACAgentRun,
+    ACInitiativePhase,
     ACIssue,
     ACPipelineSnapshot,
     ACPullRequest,
@@ -517,6 +518,57 @@ async def acknowledge_agent_run(run_id: str) -> bool:
     except Exception as exc:
         logger.warning("⚠️  acknowledge_agent_run failed: %s", exc)
         return False
+
+
+async def persist_initiative_phases(
+    initiative: str,
+    phases: list[dict[str, list[str] | str]],
+) -> None:
+    """Upsert the phase dependency graph for an initiative.
+
+    Called by ``file_issues`` after all GitHub issues have been created.
+    Each entry in *phases* must have ``"label": str`` and
+    ``"depends_on": list[str]`` keys matching the ``PlanPhase`` fields.
+
+    Uses upsert semantics so re-running a plan with the same initiative
+    replaces the old dep graph rather than failing with a duplicate key.
+    Best-effort — swallows exceptions so a DB outage never blocks filing.
+    """
+    import json as _json
+
+    try:
+        now = _now()
+        async with get_session() as session:
+            for phase in phases:
+                label = str(phase.get("label", ""))
+                raw_deps = phase.get("depends_on", [])
+                depends_on: list[str] = list(raw_deps) if isinstance(raw_deps, list) else []
+                result = await session.execute(
+                    select(ACInitiativePhase).where(
+                        ACInitiativePhase.initiative == initiative,
+                        ACInitiativePhase.phase_label == label,
+                    )
+                )
+                existing = result.scalar_one_or_none()
+                if existing is not None:
+                    existing.depends_on_json = _json.dumps(depends_on)
+                else:
+                    session.add(
+                        ACInitiativePhase(
+                            initiative=initiative,
+                            phase_label=label,
+                            depends_on_json=_json.dumps(depends_on),
+                            created_at=now,
+                        )
+                    )
+            await session.commit()
+        logger.info(
+            "✅ persist_initiative_phases: %s — %d phases written",
+            initiative,
+            len(phases),
+        )
+    except Exception as exc:
+        logger.warning("⚠️  persist_initiative_phases failed (non-fatal): %s", exc)
 
 
 async def persist_agent_event(

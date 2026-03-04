@@ -28,6 +28,7 @@ from collections.abc import AsyncGenerator
 from typing import TypedDict
 
 from agentception.config import settings as _cfg
+from agentception.db.persist import persist_initiative_phases
 from agentception.models import PlanIssue, PlanSpec
 from agentception.readers.github import ensure_label_exists
 
@@ -312,6 +313,17 @@ async def file_issues(spec: PlanSpec) -> AsyncGenerator[IssueFileEvent, None]:
             except RuntimeError as exc:
                 # Non-fatal — log and continue.
                 logger.warning("⚠️ Could not edit #%d for depends_on: %s", our_number, exc)
+
+    # ── 4. Persist phase dependency graph ─────────────────────────────────
+    # Store the DAG so the Build board can show correct locked/unlocked
+    # status for each phase swim lane rather than guessing sequentially.
+    await persist_initiative_phases(
+        initiative=spec.initiative,
+        phases=[
+            {"label": p.label, "depends_on": list(p.depends_on)}
+            for p in spec.phases
+        ],
+    )
 
     yield DoneEvent(
         t="done",

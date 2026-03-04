@@ -698,6 +698,39 @@ async def get_conductor_history(
 
 _PHASE_ORDER = ["phase-0", "phase-1", "phase-2", "phase-3"]
 
+
+async def get_initiative_phase_deps(initiative: str) -> dict[str, list[str]]:
+    """Return the phase dependency graph for an initiative.
+
+    Returns ``{phase_label: [dep_phase_label, ...]}`` — each key is a phase,
+    each value is the list of phases that must be fully closed before this
+    phase is unlocked.
+
+    Returns ``{}`` (no deps — all phases unlocked) when the initiative has no
+    stored dep graph.  This is the correct default for initiatives created
+    before ``ac_initiative_phases`` was introduced.
+
+    Falls back to ``{}`` on DB error.
+    """
+    from agentception.db.models import ACInitiativePhase
+
+    try:
+        async with get_session() as session:
+            result = await session.execute(
+                select(ACInitiativePhase).where(
+                    ACInitiativePhase.initiative == initiative
+                )
+            )
+            rows = result.scalars().all()
+
+        return {
+            row.phase_label: json.loads(row.depends_on_json or "[]")
+            for row in rows
+        }
+    except Exception as exc:
+        logger.warning("⚠️  get_initiative_phase_deps failed (non-fatal): %s", exc)
+        return {}
+
 # Labels that are never themselves initiative names — common GitHub system labels
 # and AgentCeption internal labels.
 _NON_INITIATIVE_LABELS = frozenset(
@@ -740,6 +773,19 @@ async def get_initiatives(repo: str) -> list[str]:
     except Exception as exc:
         logger.warning("⚠️  get_initiatives DB query failed (non-fatal): %s", exc)
         return []
+
+
+def _compute_locked(
+    phase_label: str,
+    deps: list[str],
+    complete_phases: set[str],
+) -> bool:
+    """Return True if any declared dependency is not yet complete.
+
+    When *deps* is empty (no dependency data stored) the phase is always
+    unlocked — the correct default for plans without stored dep graphs.
+    """
+    return any(dep not in complete_phases for dep in deps)
 
 
 async def get_issues_grouped_by_phase(
@@ -806,21 +852,35 @@ async def get_issues_grouped_by_phase(
                 }
             )
 
-        # Build ordered list; track which phases are complete for gate logic.
+        # Load the phase dependency graph for this initiative.
+        # Empty dict → no deps stored → all phases unlocked (correct default).
+        phase_deps: dict[str, list[str]] = {}
+        if initiative:
+            phase_deps = await get_initiative_phase_deps(initiative)
+
+        # Build ordered list; compute complete set first so we can evaluate
+        # deps in a single pass.
+        complete_phases: set[str] = set()
+        for phase in _PHASE_ORDER:
+            issues = groups.get(phase, [])
+            if bool(issues) and all(i["state"] == "closed" for i in issues):
+                complete_phases.add(phase)
+
         ordered: list[dict[str, Any]] = []
-        prev_complete = True
         for phase in _PHASE_ORDER:
             issues = groups.pop(phase, [])
-            complete = bool(issues) and all(i["state"] == "closed" for i in issues)
+            complete = phase in complete_phases
+            deps = phase_deps.get(phase, [])
+            locked = _compute_locked(phase, deps, complete_phases)
             ordered.append(
                 {
                     "label": phase,
                     "issues": issues,
-                    "locked": not prev_complete,
+                    "locked": locked,
                     "complete": complete,
+                    "depends_on": deps,
                 }
             )
-            prev_complete = complete or not issues  # empty phase doesn't block
 
         if not initiative:
             # Legacy: append remaining label buckets, then unphased.
@@ -832,6 +892,7 @@ async def get_issues_grouped_by_phase(
                         "issues": issues,
                         "locked": False,
                         "complete": complete,
+                        "depends_on": [],
                     }
                 )
 

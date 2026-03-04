@@ -317,6 +317,36 @@ class ACAgentEvent(Base):
 
 
 # ---------------------------------------------------------------------------
+# ACInitiativePhase — phase dependency graph per initiative
+# ---------------------------------------------------------------------------
+
+
+class ACInitiativePhase(Base):
+    """One row per phase per initiative — the DAG declared in the PlanSpec.
+
+    Written by ``persist_initiative_phases`` when ``file_issues`` completes.
+    Read by ``get_initiative_phase_deps`` to compute the ``locked`` flag on
+    the Build board swim lanes.
+
+    When no rows exist for an initiative every phase is shown as unlocked,
+    which is the correct default for plans created before this feature.
+    """
+
+    __tablename__ = "ac_initiative_phases"
+
+    initiative: Mapped[str] = mapped_column(String(256), primary_key=True)
+    phase_label: Mapped[str] = mapped_column(String(256), primary_key=True)
+    depends_on_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    """JSON list of phase label strings, e.g. ``'["phase-0"]'``."""
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_ac_initiative_phases_initiative", "initiative"),
+    )
+
+
 # ACPipelineSnapshot — tick-level time series
 # ---------------------------------------------------------------------------
 
