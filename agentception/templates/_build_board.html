@@ -28,7 +28,7 @@
       {% else %} build-issue--open
       {% endif %}"
       x-data
-      @click="$dispatch('inspect-issue', {{ issue | tojson }})"
+      @click='$dispatch("inspect-issue", {{ issue | tojson }})'
     >
       <div class="build-issue__meta">
         <a class="build-issue__number" href="{{ issue.url }}" target="_blank" rel="noopener"
@@ -58,7 +58,7 @@
       {% elif not group.locked and issue.state == 'open' %}
       <div class="build-issue__dispatch">
         <button class="build-issue__assign-btn"
-                @click.stop="$dispatch('open-dispatch', {{ issue | tojson }})">
+                @click.stop='$dispatch("open-dispatch", {{ issue | tojson }})'>
           Assign →
         </button>
       </div>
