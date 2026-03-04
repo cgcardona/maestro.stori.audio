@@ -46,6 +46,7 @@ export function buildPage(roleGroups) {
     labelDispatchError: null,
     labelDispatchSuccess: false,
     labelDispatchResult: null,
+    dispatcherCopied: false,
 
     get labelDispatchSelected() {
       return this.labelDispatchTiers[this.labelDispatchTierIdx] ?? this.labelDispatchTiers[0];
@@ -173,7 +174,21 @@ export function buildPage(roleGroups) {
       this.labelDispatchSuccess = false;
       this.labelDispatchResult = null;
       this.labelDispatching = false;
+      this.dispatcherCopied = false;
       this.labelDispatchOpen = true;
+    },
+
+    async copyDispatcherPrompt() {
+      try {
+        const res = await fetch('/api/build/dispatcher-prompt');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        await navigator.clipboard.writeText(data.content);
+        this.dispatcherCopied = true;
+        setTimeout(() => { this.dispatcherCopied = false; }, 3000);
+      } catch (err) {
+        alert(`Could not copy prompt: ${err.message}`);
+      }
     },
 
     async submitLabelDispatch() {

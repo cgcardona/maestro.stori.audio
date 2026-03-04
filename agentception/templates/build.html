@@ -233,13 +233,19 @@
           <div class="build-modal__success">
             <p>⏳ Queued for launch</p>
             <p class="build-modal__success-hint">
-              <strong x-text="labelDispatchSelected.label"></strong> agent queued
-              for label <strong x-text="labelDispatchLabel"></strong>.
+              Run ID: <code x-text="labelDispatchResult.run_id ?? ''"></code>
             </p>
-            <p class="build-modal__success-hint">
-              Paste the <strong>Dispatcher prompt</strong> into Cursor to launch the tree.
+            <p class="build-modal__success-hint" style="margin-top:0.5rem">
+              To launch the agent tree, copy the Dispatcher prompt and paste it
+              into a <strong>new Cursor chat</strong>:
             </p>
-            <pre class="build-modal__prompt-hint" x-text="'Run ID: ' + (labelDispatchResult.run_id ?? '')"></pre>
+            <button class="build-modal__copy-btn"
+                    @click="copyDispatcherPrompt()"
+                    x-text="dispatcherCopied ? '✅ Copied!' : '📋 Copy Dispatcher Prompt'">
+            </button>
+            <p class="build-modal__success-hint" style="opacity:0.55;font-size:0.7rem">
+              Prompt lives at <code>.cursor/agentception-dispatcher.md</code>
+            </p>
           </div>
         </template>
       </div>

@@ -986,6 +986,29 @@
     border-top: 1px solid var(--border-subtle);
   }
 
+  &__copy-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    width: 100%;
+    justify-content: center;
+    padding: 0.5rem 1rem;
+    margin-top: 0.375rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    background: var(--bg-overlay);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+
+    &:hover {
+      background: var(--bg-elevated);
+      border-color: var(--accent);
+    }
+  }
+
   // Label-dispatch specific elements
   &__label-badge {
     display: inline-block;

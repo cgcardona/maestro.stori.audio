@@ -378,6 +378,31 @@ async def dispatch_label_agent(req: LabelDispatchRequest) -> LabelDispatchRespon
 
 
 # ---------------------------------------------------------------------------
+# Dispatcher prompt — serve the coordinator prompt so the UI can copy it
+# ---------------------------------------------------------------------------
+
+_DISPATCHER_PROMPT_PATH = Path(settings.repo_dir) / ".cursor" / "agentception-dispatcher.md"
+
+
+@router.get("/dispatcher-prompt")
+async def get_dispatcher_prompt() -> dict[str, object]:
+    """Return the Dispatcher prompt markdown so the UI can offer a one-click copy.
+
+    The prompt lives at ``.cursor/agentception-dispatcher.md`` in the repo.
+    Returns ``{"content": "<markdown>", "path": "<rel path>"}`` or a 404 if
+    the file is missing.
+    """
+    path = Path(settings.repo_dir) / ".cursor" / "agentception-dispatcher.md"
+    if not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Dispatcher prompt not found at .cursor/agentception-dispatcher.md",
+        )
+    content = path.read_text(encoding="utf-8")
+    return {"content": content, "path": ".cursor/agentception-dispatcher.md"}
+
+
+# ---------------------------------------------------------------------------
 # Pending launches — Dispatcher reads this to know what to spawn
 # ---------------------------------------------------------------------------
 
