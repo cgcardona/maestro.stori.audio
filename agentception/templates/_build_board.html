@@ -44,7 +44,7 @@
       {%- endif %}"
       x-data
       @click='$dispatch("inspect-issue", {{ issue | tojson }})'
-      {% if is_unphased %}x-show="$index < limit"{% endif %}
+      {% if is_unphased %}x-show="{{ loop.index0 }} < limit"{% endif %}
     >
 
       {# header: number + role label + state dot #}
