@@ -287,3 +287,9 @@ Maestro generates systems.
 ------------------------------------------------------------------------
 
 **[Stori](https://stori.audio)** --- The Infinite Music Machine\
+
+------------------------------------------------------------------------
+
+## Related Projects
+
+- **[AgentCeption](https://github.com/cgcardona/agentception)** — Multi-agent orchestration system for AI-powered development workflows. Previously co-located in this repo; now standalone.
