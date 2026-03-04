@@ -2,11 +2,21 @@
  * build.js — Mission Control Alpine component
  *
  * Manages:
- *  - activeIssue   — the issue card currently being inspected
- *  - events[]      — structured MCP events from /build/agent/{run_id}/stream
- *  - thoughts[]    — raw CoT messages from the same SSE stream
- *  - dispatch modal — role selection and POST /api/build/dispatch
+ *  - activeIssue        — the issue card currently being inspected
+ *  - events[]           — structured MCP events from /build/agent/{run_id}/stream
+ *  - thoughts[]         — raw CoT messages from the same SSE stream
+ *  - dispatch modal     — role selection and POST /api/build/dispatch (issue-scoped leaf)
+ *  - labelDispatch modal — tier/role selection and POST /api/build/dispatch-label (label-scoped)
+ *
+ * See agentception/docs/agent-tree-protocol.md for tier definitions.
  */
+
+/** Tier options shown in the label-dispatch modal. */
+const LABEL_DISPATCH_TIERS = [
+  { tier: 'root',           role: 'cto',                label: '🌳 Full tree  (CTO → VPs → Engineers + Reviewers)' },
+  { tier: 'vp-engineering', role: 'engineering-manager', label: '🛠 Engineering only  (VP-Eng → Engineers)' },
+  { tier: 'vp-qa',          role: 'qa-manager',          label: '🔍 QA only  (VP-QA → Reviewers)' },
+];
 
 export function buildPage(roleGroups) {
   return {
@@ -17,7 +27,7 @@ export function buildPage(roleGroups) {
     streamOpen: false,
     _evtSource: null,
 
-    // ── dispatch modal state ─────────────────────────────────────────────
+    // ── issue-dispatch modal state ───────────────────────────────────────
     dispatchOpen: false,
     dispatchIssue: null,
     dispatchRole: 'python-developer',
@@ -26,6 +36,20 @@ export function buildPage(roleGroups) {
     dispatchError: null,
     dispatchSuccess: false,
     dispatchResult: null,
+
+    // ── label-dispatch modal state ───────────────────────────────────────
+    labelDispatchOpen: false,
+    labelDispatchLabel: '',
+    labelDispatchTiers: LABEL_DISPATCH_TIERS,
+    labelDispatchTierIdx: 0,
+    labelDispatching: false,
+    labelDispatchError: null,
+    labelDispatchSuccess: false,
+    labelDispatchResult: null,
+
+    get labelDispatchSelected() {
+      return this.labelDispatchTiers[this.labelDispatchTierIdx] ?? this.labelDispatchTiers[0];
+    },
 
     // ── repo (set by inline script in template) ──────────────────────────
     get repo() { return window._buildRepo ?? ''; },
@@ -96,7 +120,7 @@ export function buildPage(roleGroups) {
       });
     },
 
-    // ── dispatch modal ───────────────────────────────────────────────────
+    // ── issue-dispatch modal ─────────────────────────────────────────────
 
     openDispatch(issue) {
       this.dispatchIssue = issue;
@@ -137,6 +161,49 @@ export function buildPage(roleGroups) {
         this.dispatchError = `Network error: ${err.message}`;
       } finally {
         this.dispatching = false;
+      }
+    },
+
+    // ── label-dispatch modal ─────────────────────────────────────────────
+
+    openLabelDispatch(detail) {
+      this.labelDispatchLabel = detail.label ?? '';
+      this.labelDispatchTierIdx = 0;
+      this.labelDispatchError = null;
+      this.labelDispatchSuccess = false;
+      this.labelDispatchResult = null;
+      this.labelDispatching = false;
+      this.labelDispatchOpen = true;
+    },
+
+    async submitLabelDispatch() {
+      const selected = this.labelDispatchSelected;
+      this.labelDispatching = true;
+      this.labelDispatchError = null;
+
+      try {
+        const res = await fetch('/api/build/dispatch-label', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            label: this.labelDispatchLabel,
+            role: selected.role,
+            repo: this.repo,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          this.labelDispatchError = data.detail ?? `Error ${res.status}`;
+        } else {
+          this.labelDispatchResult = data;
+          this.labelDispatchSuccess = true;
+        }
+      } catch (err) {
+        this.labelDispatchError = `Network error: ${err.message}`;
+      } finally {
+        this.labelDispatching = false;
       }
     },
 

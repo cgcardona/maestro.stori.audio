@@ -6,6 +6,8 @@ pending launch queue and spawns the right agent at the right level of the tree.
 You run once, spawn everything, wait for completion, and exit.
 You do not loop indefinitely. You do not poll. You are not a daemon.
 
+Canonical reference: `agentception/docs/agent-tree-protocol.md`
+
 ---
 
 ## Step 1 — Read the queue
@@ -18,12 +20,12 @@ It returns a list of pending launches shaped like:
 {
   "pending": [
     {
-      "run_id": "issue-1234",
-      "issue_number": 1234,
-      "role": "python-developer",
-      "branch": "feat/issue-1234",
-      "host_worktree_path": "/Users/gabriel/.cursor/worktrees/maestro/issue-1234",
-      "batch_id": "issue-1234-20260303T120000Z-a1b2"
+      "run_id": "label-ac-ui-0-critical-a1b2c3",
+      "issue_number": 0,
+      "role": "cto",
+      "branch": "agent/ac-ui-0-a1b2",
+      "host_worktree_path": "/Users/gabriel/.cursor/worktrees/maestro/label-ac-ui-0-a1b2c3",
+      "batch_id": "label-ac-ui-0-critical-20260303T120000Z-a1b2"
     }
   ],
   "count": 1
@@ -36,21 +38,26 @@ If `count` is 0, the queue is empty. Print "Queue is empty — nothing to dispat
 
 ## Step 2 — Understand the tree
 
-Each item's `role` tells you what KIND of agent to spawn:
+Read each item's `.agent-task` file at:
 
-| Role | Type | What it does |
-|------|------|--------------|
-| `cto` | Root | Surveys all GitHub issues + PRs, decides VP structure, spawns VPs |
-| `vp-engineering`, `vp-product`, etc. | Manager | Surveys a subset of issues, spawns leaf workers |
-| `python-developer`, `frontend-developer`, etc. | Leaf | Implements one issue, opens one PR, exits |
+```
+{host_worktree_path}/.agent-task
+```
 
-**You do not decide what the agent does.** The role file at
-`{host_worktree_path}/.cursor/roles/{role}.md` (relative to the repo root,
-not the worktree) defines everything. You just spawn the right agent with the
-right briefing and let it drive.
+The file contains `TIER`, `SCOPE_TYPE`, and `SCOPE_VALUE` in addition to the
+fields you already know. These three together define exactly what GitHub queries
+to make and which children to spawn:
 
-The canonical role files live at:
-`/Users/gabriel/dev/tellurstori/maestro/.cursor/roles/{role}.md`
+| TIER | SCOPE_TYPE | What SCOPE_VALUE means | GitHub queries (inline in .agent-task comments) |
+|------|-----------|------------------------|------------------------------------------------|
+| `root` | `label` | GitHub label string | issues + PRs filtered to the label |
+| `vp-engineering` | `label` | GitHub label string | issues only filtered to the label |
+| `vp-qa` | `label` | GitHub label string | PRs only (all open PRs against dev) |
+| `engineer` | `issue` | Issue number (string) | `gh issue view $SCOPE_VALUE` |
+| `reviewer` | `pr` | PR number (string) | `gh pr view $SCOPE_VALUE` |
+
+The `.agent-task` file contains inline comments with the exact `gh` commands
+for this tier — pass them verbatim to the spawned agent in the briefing below.
 
 ---
 
@@ -68,37 +75,107 @@ This atomically marks the run as `implementing` so no other Dispatcher can
 double-claim it. If the response is `{"ok": false, ...}`, skip this item —
 it was already claimed.
 
-### 3b. Spawn the agent via Task tool
+### 3b. Read the .agent-task to get tier context
+
+```bash
+cat {host_worktree_path}/.agent-task
+```
+
+Extract: `TIER`, `SCOPE_TYPE`, `SCOPE_VALUE`, `GH_REPO`, `ROLE`, `ROLE_FILE`, `AC_URL`.
+
+### 3c. Spawn the agent via Task tool
 
 Use `subagent_type="generalPurpose"` — **never `shell`**. Only `generalPurpose`
 agents have the Task tool and can spawn their own children.
 
-The prompt to pass to the Task:
+**For manager/root tiers** (`TIER` is `root`, `vp-engineering`, or `vp-qa`):
 
 ```
-You are an AgentCeption agent. Your full briefing is in your .agent-task file.
+You are an AgentCeption manager agent. Your briefing:
 
-WORKTREE: {host_worktree_path}
-ROLE: {role}
-RUN_ID: {run_id}
-GH_REPO: {gh_repo}
-AC_URL: http://localhost:7777
+WORKTREE:    {host_worktree_path}
+ROLE:        {role}
+TIER:        {tier}
+RUN_ID:      {run_id}
+SCOPE_TYPE:  label
+SCOPE_VALUE: {scope_value}
+GH_REPO:     {gh_repo}
+AC_URL:      http://localhost:7777
 
 Step 1: Read your role file:
-  /Users/gabriel/dev/tellurstori/maestro/.cursor/roles/{role}.md
+  {role_file}
 
 Step 2: Read your .agent-task file:
   {host_worktree_path}/.agent-task
 
-Step 3: Follow your role instructions exactly.
-  - If you are a leaf worker: implement the issue, open a PR.
-  - If you are a manager: survey GitHub and spawn child agents via the Task tool.
+Step 3: Run your tier's GitHub queries to discover what needs doing.
 
-Step 4: Report progress via MCP tools at every significant step:
-  build_report_step    — when you start a step
-  build_report_blocker — when you are blocked
-  build_report_decision — when you make a design decision
-  build_report_done    — when you finish and have a PR URL
+  root tier — run BOTH:
+    gh issue list --repo {gh_repo} --label "{scope_value}" --state open \
+      --json number,title,labels,assignees --limit 200
+    gh pr list --repo {gh_repo} --base dev --state open \
+      --json number,title,headRefName,reviewDecision --limit 200
+  Then: spawn vp-engineering if issues exist, spawn vp-qa if PRs exist.
+
+  vp-engineering tier — run:
+    gh issue list --repo {gh_repo} --label "{scope_value}" --state open \
+      --json number,title,labels,assignees --limit 200 | \
+      jq '[.[] | select(.labels[].name != "agent:wip")]'
+  Then: spawn one engineer per issue (max 3 at a time via Task calls).
+
+  vp-qa tier — run:
+    gh pr list --repo {gh_repo} --base dev --state open \
+      --json number,title,headRefName,reviewDecision --limit 200
+  Then: spawn one pr-reviewer per PR (max 3 at a time via Task calls).
+
+Step 4: For each child you spawn:
+  - Write a .agent-task in a fresh git worktree:
+      git worktree add /tmp/worktrees/{gh_repo}/{child_run_id} -b {child_branch}
+  - Set TIER, SCOPE_TYPE, SCOPE_VALUE, PARENT_RUN_ID={run_id} correctly.
+  - Spawn via Task (subagent_type="generalPurpose").
+
+Step 5: Wait for all children to complete, then check GitHub again.
+  Loop until both queues (issues + PRs) are empty for your scope.
+
+Step 6: Report each major step via MCP:
+  build_report_step     — when starting a query or spawn wave
+  build_report_decision — when deciding what to spawn
+Always pass agent_run_id="{run_id}".
+```
+
+**For leaf tiers** (`TIER` is `engineer` or `reviewer`):
+
+```
+You are an AgentCeption agent. Your full briefing is in your .agent-task file.
+
+WORKTREE:    {host_worktree_path}
+ROLE:        {role}
+TIER:        {tier}
+RUN_ID:      {run_id}
+SCOPE_TYPE:  {scope_type}    (issue or pr)
+SCOPE_VALUE: {scope_value}   (issue or PR number)
+GH_REPO:     {gh_repo}
+AC_URL:      http://localhost:7777
+
+Step 1: Read your role file:
+  {role_file}
+
+Step 2: Read your .agent-task file:
+  {host_worktree_path}/.agent-task
+
+Step 3: Read your assigned {scope_type}:
+  gh {scope_type} view {scope_value} --repo {gh_repo} \
+    --json number,title,body,labels{",files,diff" if scope_type == "pr" else ""}
+
+Step 4: Follow your role instructions exactly.
+  engineer  → implement the issue in your worktree, open a PR against dev.
+  reviewer  → review the PR thoroughly, approve+merge or request changes.
+
+Step 5: Report progress via MCP tools at every significant step:
+  build_report_step     — when starting a step
+  build_report_blocker  — when blocked
+  build_report_decision — when making a design decision
+  build_report_done     — when finished (include pr_url for engineers)
 
 Always pass agent_run_id="{run_id}" to every MCP report call.
 ```
@@ -128,9 +205,11 @@ Print a summary:
 
 ```
 Dispatcher complete.
-  Launched: N agents
-  Roles: [list of roles spawned]
-  Queue: empty
+  Launched:  N agents
+  Tiers:     [list of tiers spawned]
+  Roles:     [list of roles spawned]
+  Labels:    [list of scope labels]
+  Queue:     empty
 ```
 
 Then exit. You are done.
@@ -140,7 +219,8 @@ Then exit. You are done.
 ## Rules
 
 - Never spawn more than 3 Tasks simultaneously — this is the observed Cursor concurrency ceiling.
-- Always use `subagent_type="generalPurpose"` for agent Tasks.
+- Always use `subagent_type="generalPurpose"` for all agent Tasks (leaf and manager).
 - Always claim (acknowledge) before spawning — prevents double-dispatch.
-- Do not describe implementation details to child agents — the role file does that.
+- Always read the `.agent-task` file before spawning — TIER and SCOPE_VALUE drive the briefing.
+- Manager agents spawn their own children — you only spawn the top-level node.
 - Do not loop indefinitely — drain the queue and exit.

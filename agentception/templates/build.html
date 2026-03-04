@@ -6,6 +6,7 @@
      x-data='buildPage({{ role_groups | tojson }})'
      @inspect-issue.window="onInspect($event.detail)"
      @open-dispatch.window="openDispatch($event.detail)"
+     @open-label-dispatch.window="openLabelDispatch($event.detail)"
 >
 
   {# ── page header ─────────────────────────────────────────────────────── #}
@@ -182,6 +183,62 @@
                 @click="submitDispatch()">
           <span x-show="!dispatching">Assign →</span>
           <span x-show="dispatching">Creating worktree…</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# ── label-dispatch modal (phase-level / manager launch) ─────────────── #}
+  <div class="build-modal-backdrop" x-show="labelDispatchOpen" x-transition @click.self="labelDispatchOpen = false">
+    <div class="build-modal" @click.stop>
+
+      <div class="build-modal__header">
+        <h3 class="build-modal__title">Launch agent tree</h3>
+        <button class="build-modal__close" @click="labelDispatchOpen = false">✕</button>
+      </div>
+
+      <div class="build-modal__body">
+        <p class="build-modal__issue-label">
+          <strong>Label: </strong>
+          <span class="build-modal__label-badge" x-text="labelDispatchLabel"></span>
+        </p>
+
+        <label class="build-modal__label">Entry point (tier)</label>
+        <div class="build-modal__tier-list">
+          <template x-for="(opt, idx) in labelDispatchTiers" :key="opt.role">
+            <label class="build-modal__tier-opt" :class="{ 'build-modal__tier-opt--active': labelDispatchTierIdx === idx }">
+              <input type="radio" name="labelDispatchTier" :value="idx" x-model.number="labelDispatchTierIdx" />
+              <span x-text="opt.label"></span>
+            </label>
+          </template>
+        </div>
+
+        <template x-if="labelDispatchError">
+          <p class="build-modal__error" x-text="labelDispatchError"></p>
+        </template>
+
+        <template x-if="labelDispatchSuccess">
+          <div class="build-modal__success">
+            <p>⏳ Queued for launch</p>
+            <p class="build-modal__success-hint">
+              <strong x-text="labelDispatchSelected.label"></strong> agent queued
+              for label <strong x-text="labelDispatchLabel"></strong>.
+            </p>
+            <p class="build-modal__success-hint">
+              Paste the <strong>Dispatcher prompt</strong> into Cursor to launch the tree.
+            </p>
+            <pre class="build-modal__prompt-hint" x-text="'Run ID: ' + (labelDispatchResult.run_id ?? '')"></pre>
+          </div>
+        </template>
+      </div>
+
+      <div class="build-modal__footer">
+        <button class="btn btn-secondary" @click="labelDispatchOpen = false">Cancel</button>
+        <button class="btn btn-primary"
+                :disabled="labelDispatching || labelDispatchSuccess"
+                @click="submitLabelDispatch()">
+          <span x-show="!labelDispatching">Launch →</span>
+          <span x-show="labelDispatching">Queuing…</span>
         </button>
       </div>
     </div>

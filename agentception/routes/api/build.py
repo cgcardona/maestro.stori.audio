@@ -2,8 +2,9 @@
 
 Three audiences:
 
-1. **The Build UI** — ``POST /api/build/dispatch`` creates a worktree,
-   ``.agent-task`` file, and a ``pending_launch`` DB record.
+1. **The Build UI** — ``POST /api/build/dispatch`` (issue-scoped leaf) and
+   ``POST /api/build/dispatch-label`` (label-scoped manager/root) create a
+   worktree, ``.agent-task`` file, and a ``pending_launch`` DB record.
 
 2. **The AgentCeption Coordinator** — ``GET /api/build/pending-launches``
    exposes the launch queue; ``POST /api/build/acknowledge/{run_id}``
@@ -11,6 +12,8 @@ Three audiences:
 
 3. **Running agents** — ``POST /api/build/report/*`` lets agents push
    structured lifecycle events back to AgentCeption.
+
+See ``agentception/docs/agent-tree-protocol.md`` for the full tier spec.
 """
 from __future__ import annotations
 
@@ -174,6 +177,196 @@ async def dispatch_agent(req: DispatchRequest) -> DispatchResponse:
         worktree=worktree_path,
         host_worktree=host_worktree_path,
         branch=branch,
+        agent_task_path=agent_task_path,
+        batch_id=batch_id,
+        status="pending_launch",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tier → GitHub scope mapping (mirrors agent-tree-protocol.md)
+# ---------------------------------------------------------------------------
+
+# Maps each role slug to its canonical tier.
+_ROLE_TIER: dict[str, str] = {
+    "cto": "root",
+    "engineering-manager": "vp-engineering",
+    "qa-manager": "vp-qa",
+    "pr-reviewer": "reviewer",
+}
+_ENGINEERING_ROLES = {
+    "python-developer", "frontend-developer", "typescript-developer",
+    "react-developer", "go-developer", "rust-developer", "api-developer",
+    "devops-engineer", "data-engineer", "site-reliability-engineer",
+    "security-engineer", "mobile-developer", "ios-developer",
+    "android-developer", "full-stack-developer", "architect",
+    "technical-writer", "test-engineer", "ml-engineer", "ml-researcher",
+    "systems-programmer", "rails-developer", "database-architect",
+    "muse-specialist",
+}
+for _r in _ENGINEERING_ROLES:
+    _ROLE_TIER[_r] = "engineer"
+
+
+def _tier_for_role(role: str) -> str:
+    """Derive the protocol tier for a role slug."""
+    return _ROLE_TIER.get(role, "engineer")
+
+
+# ---------------------------------------------------------------------------
+# dispatch-label — launch a manager or root agent scoped to a GitHub label
+# ---------------------------------------------------------------------------
+
+
+class LabelDispatchRequest(BaseModel):
+    """Request body for ``POST /api/build/dispatch-label``."""
+
+    label: str
+    """GitHub label string, e.g. ``AC-UI/0-CRITICAL-BUGS``."""
+    role: str = "cto"
+    """Entry role. Defaults to ``cto`` (root of the tree)."""
+    repo: str
+    """``owner/repo`` string."""
+
+
+class LabelDispatchResponse(BaseModel):
+    """Successful label-dispatch response."""
+
+    run_id: str
+    tier: str
+    role: str
+    label: str
+    worktree: str
+    host_worktree: str
+    agent_task_path: str
+    batch_id: str
+    status: str = "pending_launch"
+
+
+def _label_slug(label: str) -> str:
+    """Turn a GitHub label into a filesystem-safe slug."""
+    return _SLUG_RE.sub("-", label.lower()).strip("-")[:48]
+
+
+def _make_label_batch_id(label: str) -> str:
+    stamp = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    short = uuid.uuid4().hex[:4]
+    slug = _label_slug(label)
+    return f"label-{slug}-{stamp}-{short}"
+
+
+@router.post("/dispatch-label", response_model=LabelDispatchResponse)
+async def dispatch_label_agent(req: LabelDispatchRequest) -> LabelDispatchResponse:
+    """Launch a manager or root agent scoped to a GitHub label.
+
+    Unlike ``/dispatch`` (which is tied to a single issue), this endpoint
+    creates an agent whose SCOPE_TYPE is ``label``.  The agent's role file
+    and tier determine how it surveys GitHub and which children it spawns —
+    see ``agentception/docs/agent-tree-protocol.md``.
+
+    A worktree is still created so the agent has an isolated checkout to
+    run ``gh`` and ``git`` commands from without touching the main repo.
+
+    Raises:
+        HTTPException 409: Worktree already exists.
+        HTTPException 500: git worktree or .agent-task write failed.
+    """
+    tier = _tier_for_role(req.role)
+    label_slug = _label_slug(req.label)
+    batch_id = _make_label_batch_id(req.label)
+    run_id = f"label-{label_slug}-{uuid.uuid4().hex[:6]}"
+    branch = f"agent/{label_slug}-{uuid.uuid4().hex[:4]}"
+
+    worktree_path = str(Path(settings.worktrees_dir) / run_id)
+    host_worktree_path = str(Path(settings.host_worktrees_dir) / run_id)
+
+    if Path(worktree_path).exists():
+        raise HTTPException(
+            status_code=409,
+            detail=f"Worktree already exists at {worktree_path}.",
+        )
+
+    proc = await asyncio.create_subprocess_exec(
+        "git", "worktree", "add", worktree_path, "-b", branch,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        err = stderr.decode().strip()
+        logger.error("❌ dispatch-label: git worktree add failed — %s", err)
+        raise HTTPException(status_code=500, detail=f"git worktree add failed: {err}")
+
+    logger.info("✅ dispatch-label: worktree %s for label %r tier=%s", worktree_path, req.label, tier)
+
+    ac_url = getattr(settings, "ac_url", "http://localhost:7777")
+    role_file = str(Path(settings.repo_dir) / ".cursor" / "roles" / f"{req.role}.md")
+
+    agent_task = (
+        f"# AgentCeption agent briefing — generated by dispatch-label\n"
+        f"# See agentception/docs/agent-tree-protocol.md for the full spec.\n\n"
+        f"RUN_ID={run_id}\n"
+        f"ROLE={req.role}\n"
+        f"TIER={tier}\n"
+        f"SCOPE_TYPE=label\n"
+        f"SCOPE_VALUE={req.label}\n"
+        f"GH_REPO={req.repo}\n"
+        f"BRANCH={branch}\n"
+        f"WORKTREE={host_worktree_path}\n"
+        f"BATCH_ID={batch_id}\n"
+        f"PARENT_RUN_ID=\n"
+        f"AC_URL={ac_url}\n"
+        f"ROLE_FILE={role_file}\n"
+        f"\n"
+        f"# GitHub queries for this tier ({tier}):\n"
+    )
+
+    if tier == "root":
+        agent_task += (
+            f"# gh issue list --repo {req.repo} --label '{req.label}' --state open --json number,title,labels --limit 200\n"
+            f"# gh pr list --repo {req.repo} --base dev --state open --json number,title,headRefName --limit 200\n"
+        )
+    elif tier == "vp-engineering":
+        agent_task += (
+            f"# gh issue list --repo {req.repo} --label '{req.label}' --state open --json number,title,labels --limit 200\n"
+        )
+    elif tier == "vp-qa":
+        agent_task += (
+            f"# gh pr list --repo {req.repo} --base dev --state open --json number,title,headRefName,reviewDecision --limit 200\n"
+        )
+
+    agent_task_path = str(Path(worktree_path) / ".agent-task")
+    try:
+        Path(agent_task_path).write_text(agent_task, encoding="utf-8")
+    except Exception as exc:
+        cleanup = await asyncio.create_subprocess_exec(
+            "git", "worktree", "remove", "--force", worktree_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await cleanup.communicate()
+        logger.error("❌ dispatch-label: .agent-task write failed — %s", exc)
+        raise HTTPException(status_code=500, detail=f".agent-task write failed: {exc}") from exc
+
+    logger.info("✅ dispatch-label: .agent-task written to %s", agent_task_path)
+
+    await persist_agent_run_dispatch(
+        run_id=run_id,
+        issue_number=0,          # no single issue — label-scoped
+        role=req.role,
+        branch=branch,
+        worktree_path=worktree_path,
+        batch_id=batch_id,
+        host_worktree_path=host_worktree_path,
+    )
+
+    return LabelDispatchResponse(
+        run_id=run_id,
+        tier=tier,
+        role=req.role,
+        label=req.label,
+        worktree=worktree_path,
+        host_worktree=host_worktree_path,
         agent_task_path=agent_task_path,
         batch_id=batch_id,
         status="pending_launch",
