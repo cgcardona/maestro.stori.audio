@@ -24,6 +24,7 @@ from sqlalchemy import select
 
 from agentception.db.engine import get_session
 from agentception.db.models import (
+    ACAgentEvent,
     ACAgentMessage,
     ACAgentRun,
     ACIssue,
@@ -425,6 +426,34 @@ async def persist_wave_complete(wave_id: str, spawn_count: int, skip_count: int)
 # ---------------------------------------------------------------------------
 # Agent messages (async fire-and-forget)
 # ---------------------------------------------------------------------------
+
+
+async def persist_agent_event(
+    issue_number: int,
+    event_type: str,
+    payload: dict[str, object],
+    agent_run_id: str | None = None,
+) -> None:
+    """Write one structured agent event row to ``ac_agent_events``.
+
+    Called by the ``build_report_*`` HTTP endpoints when a running agent
+    signals a lifecycle change.  The optional ``agent_run_id`` is included
+    if the caller can resolve it; otherwise only ``issue_number`` is set.
+    """
+    try:
+        async with get_session() as session:
+            session.add(
+                ACAgentEvent(
+                    agent_run_id=agent_run_id,
+                    issue_number=issue_number,
+                    event_type=event_type,
+                    payload=json.dumps(payload),
+                    recorded_at=_now(),
+                )
+            )
+            await session.commit()
+    except Exception as exc:
+        logger.warning("⚠️  persist_agent_event failed (non-fatal): %s", exc)
 
 
 async def persist_agent_messages_async(

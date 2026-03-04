@@ -22,6 +22,7 @@
  *   config.js       — configPanel
  *   roles.js        — roleDetail, rolesEditor
  *   plan.js         — planForm
+ *   build.js        — buildPage
  *   transcripts.js  — transcriptBrowser, transcriptDetail
  *   templates.js    — exportPanel, importPanel, envSandbox
  *   api.js          — apiEndpoint
@@ -43,6 +44,7 @@ import { dagVisualization } from './dag.js';
 import { configPanel } from './config.js';
 import { roleDetail, rolesEditor } from './roles.js';
 import { planForm } from './plan.js';
+import { buildPage } from './build.js';
 import { transcriptBrowser, transcriptDetail } from './transcripts.js';
 import { exportPanel, importPanel, envSandbox } from './templates.js';
 import { apiEndpoint } from './api.js';
@@ -62,6 +64,7 @@ Object.assign(window, {
   configPanel,
   roleDetail, rolesEditor,
   planForm,
+  buildPage,
   transcriptBrowser, transcriptDetail,
   exportPanel, importPanel, envSandbox,
   apiEndpoint,
