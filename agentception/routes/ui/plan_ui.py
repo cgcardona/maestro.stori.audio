@@ -108,6 +108,70 @@ _PLAN_LOADING_MSGS: list[str] = [
 ]
 
 
+def _normalize_plan_dict(raw: object) -> object:
+    """Coerce alternative YAML shapes into the canonical PlanSpec mapping.
+
+    Claude occasionally returns a top-level dict keyed by the initiative slug
+    rather than using flat ``initiative`` / ``phases`` keys, e.g.::
+
+        tech-debt-sprint:
+          phase-0:
+            description: "..."
+            depends_on: []
+            issues: [...]
+
+    This function detects that pattern (single top-level key that is neither
+    ``"initiative"`` nor ``"phases"``, whose value is a dict of phase-labelled
+    sub-dicts) and converts it to::
+
+        initiative: tech-debt-sprint
+        phases:
+          - label: phase-0
+            description: "..."
+            depends_on: []
+            issues: [...]
+
+    All other shapes are returned unchanged so normal Pydantic validation runs.
+    """
+    if not isinstance(raw, dict):
+        return raw
+
+    # Already in canonical form.
+    if "initiative" in raw or "phases" in raw:
+        return raw
+
+    keys = list(raw.keys())
+    if len(keys) != 1:
+        return raw  # multiple top-level keys — let Pydantic report the real error
+
+    initiative_slug = str(keys[0])
+    body = raw[initiative_slug]
+
+    if not isinstance(body, dict):
+        return raw
+
+    # Check if the values look like phase dicts (have label-like keys starting with "phase-").
+    phase_keys = [k for k in body if isinstance(k, str) and k.startswith("phase-")]
+    if not phase_keys:
+        return raw
+
+    # Convert {phase-0: {description, depends_on, issues}, ...} → list of phase dicts.
+    phases: list[dict[str, object]] = []
+    for phase_label in sorted(body.keys()):
+        phase_body = body[phase_label]
+        if not isinstance(phase_body, dict):
+            continue
+        phase_entry: dict[str, object] = {"label": phase_label}
+        phase_entry.update(phase_body)
+        phases.append(phase_entry)
+
+    logger.warning(
+        "⚠️ Normalised alternative YAML shape: initiative-as-key=%r → canonical PlanSpec",
+        initiative_slug,
+    )
+    return {"initiative": initiative_slug, "phases": phases}
+
+
 def _parse_task_fields(content: str) -> dict[str, str]:
     """Parse key=value lines from the structured header of a ``.agent-task`` file.
 
@@ -291,7 +355,12 @@ async def plan_preview(body: PlanDraftRequest) -> StreamingResponse:
                 })
                 return
 
-            spec = PlanSpec.from_yaml(yaml_str)
+            # Normalise alternative YAML structures Claude occasionally produces.
+            # Claude sometimes returns {initiative_slug: {phase_label: {...}}}
+            # instead of the canonical {initiative: ..., phases: [...]} shape.
+            parsed = _normalize_plan_dict(parsed)
+
+            spec = PlanSpec.model_validate(parsed)
             canonical = spec.to_yaml()
             total = sum(len(p.issues) for p in spec.phases)
             logger.info(
