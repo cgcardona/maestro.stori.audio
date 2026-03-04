@@ -10,7 +10,6 @@ The test suite verifies:
 """
 from __future__ import annotations
 
-import json
 from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -81,8 +80,9 @@ def _mock_proc(returncode: int = 0, stdout: bytes = b"", stderr: bytes = b"") ->
     return proc
 
 
-def _issue_json(number: int) -> bytes:
-    return json.dumps({"number": number, "url": f"https://github.com/test/repo/issues/{number}"}).encode()
+def _issue_url(number: int) -> bytes:
+    """Simulate the plain-text URL that gh issue create prints to stdout."""
+    return f"https://github.com/test/repo/issues/{number}\n".encode()
 
 
 async def _collect(gen: AsyncIterator[Any]) -> list[Any]:
@@ -104,7 +104,7 @@ async def test_file_issues_emits_start_event() -> None:
         patch("agentception.readers.issue_creator.ensure_label_exists", new_callable=AsyncMock),
         patch(
             "asyncio.create_subprocess_exec",
-            return_value=_mock_proc(stdout=_issue_json(42)),
+            return_value=_mock_proc(stdout=_issue_url(42)),
         ),
     ):
         events = await _collect(file_issues(spec))
@@ -124,7 +124,7 @@ async def test_file_issues_emits_label_event() -> None:
         patch("agentception.readers.issue_creator.ensure_label_exists", new_callable=AsyncMock),
         patch(
             "asyncio.create_subprocess_exec",
-            return_value=_mock_proc(stdout=_issue_json(42)),
+            return_value=_mock_proc(stdout=_issue_url(42)),
         ),
     ):
         events = await _collect(file_issues(spec))
@@ -144,7 +144,7 @@ async def test_file_issues_emits_issue_events_for_each_issue() -> None:
     def fake_proc(*_args: object, **_kwargs: object) -> MagicMock:
         nonlocal call_count
         call_count += 1
-        return _mock_proc(stdout=_issue_json(100 + call_count))
+        return _mock_proc(stdout=_issue_url(100 + call_count))
 
     with (
         patch("agentception.readers.issue_creator.ensure_label_exists", new_callable=AsyncMock),
@@ -167,7 +167,7 @@ async def test_file_issues_emits_done_event_last() -> None:
     def fake_proc(*_args: object, **_kwargs: object) -> MagicMock:
         nonlocal call_count
         call_count += 1
-        return _mock_proc(stdout=_issue_json(200 + call_count))
+        return _mock_proc(stdout=_issue_url(200 + call_count))
 
     with (
         patch("agentception.readers.issue_creator.ensure_label_exists", new_callable=AsyncMock),
@@ -201,7 +201,7 @@ async def test_file_issues_edits_body_for_depends_on() -> None:
         cmd = list(args)
         if "create" in cmd:
             create_count += 1
-            return _mock_proc(stdout=_issue_json(300 + create_count))
+            return _mock_proc(stdout=_issue_url(300 + create_count))
         if "edit" in cmd:
             edit_calls.append(cmd)
             return _mock_proc()
@@ -238,7 +238,7 @@ async def test_file_issues_no_edit_when_no_depends_on() -> None:
         cmd = list(args)
         if "create" in cmd:
             create_count += 1
-            return _mock_proc(stdout=_issue_json(400 + create_count))
+            return _mock_proc(stdout=_issue_url(400 + create_count))
         if "edit" in cmd:
             edit_calls.append(cmd)
             return _mock_proc()

@@ -23,7 +23,6 @@ start a phase-1 issue until all phase-0 issues are closed.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from collections.abc import AsyncGenerator
 from typing import TypedDict
@@ -100,13 +99,16 @@ async def _gh_create_issue(
     body: str,
     labels: list[str],
 ) -> tuple[int, str]:
-    """Create a GitHub issue. Returns (number, html_url)."""
+    """Create a GitHub issue. Returns (number, html_url).
+
+    ``gh issue create`` prints the issue URL as plain text on stdout —
+    it does not accept ``--json``.  We parse the number from the URL.
+    """
     cmd = [
         "gh", "issue", "create",
         "--repo", repo,
         "--title", title,
         "--body", body,
-        "--json", "number,url",
     ]
     for label in labels:
         cmd += ["--label", label]
@@ -124,10 +126,17 @@ async def _gh_create_issue(
             f"{stderr.decode().strip()!r}"
         )
 
-    data: object = json.loads(stdout.decode().strip())
-    if not isinstance(data, dict):
-        raise RuntimeError(f"gh issue create returned unexpected JSON: {data!r}")
-    return int(data["number"]), str(data["url"])
+    url = stdout.decode().strip()
+    if not url:
+        raise RuntimeError("gh issue create returned empty output")
+
+    # URL shape: https://github.com/owner/repo/issues/123
+    try:
+        number = int(url.rstrip("/").rsplit("/", 1)[-1])
+    except ValueError as exc:
+        raise RuntimeError(f"Could not parse issue number from URL {url!r}") from exc
+
+    return number, url
 
 
 async def _gh_edit_body(repo: str, number: int, new_body: str) -> None:
