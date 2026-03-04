@@ -2,15 +2,17 @@
 {% set closed_count = group.issues | selectattr("state", "equalto", "closed") | list | length %}
 {% set total_count  = group.issues | length %}
 {% set is_unphased  = group.label == "unphased" %}
-{% if not group.issues and not is_unphased %}{% endif %}
 {% if group.issues or is_unphased %}
+
 <div class="build-phase
   {%- if group.complete %} build-phase--complete
   {%- elif group.locked %} build-phase--locked
   {%- else %} build-phase--active
-  {%- endif %}">
+  {%- endif %}"
+  x-data="{ open: {{ 'true' if (not group.locked and not group.complete) else 'false' }} }"
+>
 
-  <div class="build-phase__header">
+  <div class="build-phase__header" @click="open = !open">
     <span class="build-phase__icon">
       {%- if group.complete %}✅{%- elif group.locked %}🔒{%- else %}🔓{%- endif %}
     </span>
@@ -21,10 +23,11 @@
     {% if group.locked %}
     <span class="build-phase__gate">locked</span>
     {% endif %}
+    <span class="build-phase__chevron" :class="{ 'build-phase__chevron--open': open }">›</span>
   </div>
 
   {% if group.issues %}
-  <ul class="build-phase__issues">
+  <ul class="build-phase__issues" x-show="open">
     {% for issue in group.issues %}
     {% set run = issue.run %}
     {% set is_running = run and run.status in ('implementing', 'pending_launch', 'IMPLEMENTING', 'PENDING_LAUNCH') %}
@@ -54,9 +57,7 @@
           {%- else %} build-issue__state-dot--open
           {%- endif %}"></span>
       </div>
-
       <p class="build-issue__title">{{ issue.title }}</p>
-
       <div class="build-issue__footer">
         {% if run %}
         <div class="build-issue__run">
@@ -75,8 +76,6 @@
     </li>
     {% endfor %}
   </ul>
-  {% else %}
-  <p class="build-phase__empty">No issues in this phase.</p>
   {% endif %}
 
 </div>
