@@ -54,9 +54,14 @@
            @click.stop>#{{ issue.number }}</a>
 
         {# show first non-phase label as a pill #}
-        {% set role_label = issue.labels | reject("match", "phase-[0-9]+") | reject("equalto", "unphased") | first | default(none) %}
-        {% if role_label %}
-        <span class="build-issue__label-pill">{{ role_label }}</span>
+        {% set ns = namespace(role_label=none) %}
+        {% for lbl in issue.labels %}
+          {% if ns.role_label is none and not lbl.startswith('phase-') and lbl != 'unphased' %}
+            {% set ns.role_label = lbl %}
+          {% endif %}
+        {% endfor %}
+        {% if ns.role_label %}
+        <span class="build-issue__label-pill">{{ ns.role_label }}</span>
         {% endif %}
 
         <span class="build-issue__state-dot
