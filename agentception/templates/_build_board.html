@@ -2,25 +2,17 @@
 {% set closed_count = group.issues | selectattr("state", "equalto", "closed") | list | length %}
 {% set total_count  = group.issues | length %}
 {% set is_unphased  = group.label == "unphased" %}
-{% set default_open = not group.locked and not group.complete %}
+{% if not group.issues and not is_unphased %}{% endif %}
 {% if group.issues or is_unphased %}
-
 <div class="build-phase
   {%- if group.complete %} build-phase--complete
   {%- elif group.locked %} build-phase--locked
-  {%- elif not group.issues %} build-phase--empty
   {%- else %} build-phase--active
-  {%- endif %}"
-  x-data="{ open: {{ 'true' if default_open else 'false' }} }"
->
+  {%- endif %}">
 
-  <div class="build-phase__header" @click="open = !open">
+  <div class="build-phase__header">
     <span class="build-phase__icon">
-      {%- if group.complete %}✅
-      {%- elif group.locked %}🔒
-      {%- elif group.issues %}🔓
-      {%- else %}○
-      {%- endif %}
+      {%- if group.complete %}✅{%- elif group.locked %}🔒{%- else %}🔓{%- endif %}
     </span>
     <span class="build-phase__label">{{ group.label }}</span>
     {% if total_count > 0 %}
@@ -29,11 +21,10 @@
     {% if group.locked %}
     <span class="build-phase__gate">locked</span>
     {% endif %}
-    <span class="build-phase__chevron" :class="{ 'build-phase__chevron--open': open }">›</span>
   </div>
 
   {% if group.issues %}
-  <ul class="build-phase__issues" x-show="open">
+  <ul class="build-phase__issues">
     {% for issue in group.issues %}
     {% set run = issue.run %}
     {% set is_running = run and run.status in ('implementing', 'pending_launch', 'IMPLEMENTING', 'PENDING_LAUNCH') %}
@@ -45,10 +36,9 @@
       @click='$dispatch("inspect-issue", {{ issue | tojson }})'
     >
       <div class="build-issue__header">
-        <a class="build-issue__number"
-           href="{{ issue.url }}" target="_blank" rel="noopener"
-           @click.stop>#{{ issue.number }}</a>
-
+        <a class="build-issue__number" href="{{ issue.url }}" target="_blank" rel="noopener" @click.stop>
+          #{{ issue.number }}
+        </a>
         {% set ns = namespace(role_label=none) %}
         {% for lbl in issue.labels %}
           {% if ns.role_label is none and not lbl.startswith('phase-') and lbl != 'unphased' %}
@@ -58,7 +48,6 @@
         {% if ns.role_label %}
         <span class="build-issue__label-pill">{{ ns.role_label }}</span>
         {% endif %}
-
         <span class="build-issue__state-dot
           {%- if issue.state == 'closed' %} build-issue__state-dot--closed
           {%- elif is_running %} build-issue__state-dot--active
@@ -74,22 +63,20 @@
           <span class="build-issue__role">{{ run.role }}</span>
           <span class="build-issue__status build-issue__status--{{ run.status | lower }}">{{ run.status }}</span>
           {% if run.pr_number %}
-          <a class="build-issue__pr"
-             href="https://github.com/{{ repo }}/pull/{{ run.pr_number }}"
-             target="_blank" rel="noopener"
-             @click.stop>PR&thinsp;#{{ run.pr_number }}</a>
+          <a class="build-issue__pr" href="https://github.com/{{ repo }}/pull/{{ run.pr_number }}"
+             target="_blank" rel="noopener" @click.stop>PR&thinsp;#{{ run.pr_number }}</a>
           {% endif %}
         </div>
         {% elif not group.locked and issue.state == 'open' %}
         <button class="build-issue__assign-btn"
-                @click.stop='$dispatch("open-dispatch", {{ issue | tojson }})'>
-          Assign →
-        </button>
+                @click.stop='$dispatch("open-dispatch", {{ issue | tojson }})'>Assign →</button>
         {% endif %}
       </div>
     </li>
     {% endfor %}
   </ul>
+  {% else %}
+  <p class="build-phase__empty">No issues in this phase.</p>
   {% endif %}
 
 </div>

@@ -5,8 +5,7 @@
 // ── Full-page layout ──────────────────────────────────────────────────────────
 
 .build-layout {
-  display: flex;
-  flex-direction: column;
+  display: block; // natural document flow — page scrolls normally
 }
 
 // ── Top bar ───────────────────────────────────────────────────────────────────
@@ -85,20 +84,21 @@
 .build-columns {
   display: grid;
   grid-template-columns: 1fr 400px;
-  align-items: start; // let each column grow independently
+  align-items: start;
+  padding: 0.875rem 1rem;
+  gap: 1rem;
 
   @media (max-width: 1100px) {
     grid-template-columns: 1fr;
   }
 }
 
-// ── Phase board (left) — scrolls with the page ───────────────────────────────
+// ── Phase board (left) ────────────────────────────────────────────────────────
 
 .build-board {
-  padding: 0.875rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.5rem;
 }
 
 // ── Phase swim lane ───────────────────────────────────────────────────────────
@@ -152,12 +152,6 @@
   padding: 0.5rem 0.875rem;
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--border-subtle);
-  cursor: pointer;
-  user-select: none;
-
-  &:hover {
-    background: var(--bg-overlay);
-  }
 }
 
 .build-phase__icon {
@@ -456,17 +450,18 @@
   }
 }
 
-// ── Inspector panel (right) — sticky alongside the scrolling board ───────────
+// ── Inspector panel (right) — sticky as board scrolls ────────────────────────
 
 .build-inspector {
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--border-subtle);
-  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
   overflow: hidden;
   position: sticky;
-  top: 52px; // height of the nav bar
-  height: calc(100vh - 52px - 53px); // viewport minus nav minus build-header
+  top: 64px;
+  max-height: calc(100vh - 80px);
 
   // ── Empty state ─────────────────────────────────────────────────────────────
   &__empty {
