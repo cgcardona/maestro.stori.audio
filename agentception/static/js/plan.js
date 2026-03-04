@@ -97,10 +97,17 @@ export function planForm() {
     },
 
     _rotateMsgs() {
+      // Fisher-Yates shuffle so the sequence is different every time.
+      const msgs = [...this._loadingMsgs];
+      for (let j = msgs.length - 1; j > 0; j--) {
+        const k = Math.floor(Math.random() * (j + 1));
+        [msgs[j], msgs[k]] = [msgs[k], msgs[j]];
+      }
       let i = 0;
+      this.loadingMsg = msgs[0] ?? '';
       this._loadingTimer = setInterval(() => {
-        i = (i + 1) % this._loadingMsgs.length;
-        this.loadingMsg = this._loadingMsgs[i] ?? '';
+        i = (i + 1) % msgs.length;
+        this.loadingMsg = msgs[i] ?? '';
       }, 4000);
     },
 
