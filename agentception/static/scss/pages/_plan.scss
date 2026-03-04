@@ -305,61 +305,6 @@
   }
 }
 
-// ── Thinking stream (chain of thought) ───────────────────────────────────
-.plan-think-wrap {
-  border-radius: 6px;
-  border: 1px solid rgba(124, 58, 237, .25);
-  background: rgba(124, 58, 237, .05);
-  overflow: hidden;
-  margin-bottom: .75rem;
-}
-
-.plan-think-label {
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-  padding: .4rem .75rem;
-  border-bottom: 1px solid rgba(124, 58, 237, .15);
-  font-size: .75rem;
-  color: rgba(167, 139, 250, .7);
-}
-
-.plan-think-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent-bright, #a78bfa);
-  animation: think-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes think-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50%       { opacity: .4; transform: scale(.7); }
-}
-
-.plan-think-chars { margin-left: auto; opacity: .5; }
-
-.plan-think-pre {
-  margin: 0;
-  padding: .75rem;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  font-size: .73rem;
-  line-height: 1.5;
-  color: rgba(167, 139, 250, .55);
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-y: auto;
-  max-height: 200px;
-  transition: max-height .4s ease;
-
-  &--collapsed {
-    max-height: 48px;
-    overflow: hidden;
-    mask-image: linear-gradient(to bottom, #000 40%, transparent 100%);
-    -webkit-mask-image: linear-gradient(to bottom, #000 40%, transparent 100%);
-  }
-}
-
 // ── YAML stream preview ───────────────────────────────────────────────────
 .plan-stream-wrap {
   border-radius: 6px;

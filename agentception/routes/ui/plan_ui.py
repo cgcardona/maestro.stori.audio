@@ -236,25 +236,35 @@ async def plan_preview(body: PlanDraftRequest) -> StreamingResponse:
     if not dump:
         raise HTTPException(status_code=422, detail="Plan text must not be empty.")
 
+    # Build the context pack before streaming so the full prompt is ready.
+    # Errors are swallowed inside build_context_pack — we never fail the request
+    # just because GitHub is slow or a label fetch times out.
+    from agentception.readers.context_pack import build_context_pack
+    ctx = await build_context_pack()
+    augmented_dump = f"{ctx}\n## Your plan\n{dump}" if ctx else dump
+
     async def _llm_stream() -> AsyncGenerator[str, None]:
         """Stream LLM tokens then emit a validated ``done`` event.
 
-        Yields three SSE event types to the browser:
-          {"t": "thinking", "text": "..."}  -- chain-of-thought reasoning
+        Yields two SSE event types to the browser:
           {"t": "chunk",    "text": "..."}  -- output YAML token
           {"t": "done",     "yaml": "...", ...}  -- validated, complete
           {"t": "error",    "detail": "..."}  -- something went wrong
+
+        Chain-of-thought ("thinking") tokens from extended reasoning are
+        intentionally discarded — they can leak prompt internals and anchor
+        users on model reasoning rather than the YAML output.
         """
         accumulated = ""
         try:
             async for llm_chunk in call_openrouter_stream(
-                dump,
+                augmented_dump,
                 system_prompt=_YAML_SYSTEM_PROMPT,
                 temperature=0.2,
-                max_tokens=4096,
+                max_tokens=8192,
             ):
                 if llm_chunk["type"] == "thinking":
-                    yield _sse({"t": "thinking", "text": llm_chunk["text"]})
+                    pass  # discard — never sent to browser
                 else:
                     # "content" chunks are the YAML output
                     accumulated += llm_chunk["text"]

@@ -169,23 +169,6 @@
       <button class="plan-cancel-btn" @click="cancel()">Cancel</button>
     </div>
 
-    {# Chain-of-thought reasoning — shown while Claude thinks, collapses when YAML appears #}
-    <div class="plan-think-wrap" x-show="thinkingText" x-transition.opacity>
-      <div class="plan-think-label">
-        <span class="plan-think-dot"></span>
-        <span x-text="streamingText ? 'Reasoning complete' : 'Reasoning…'"></span>
-        <span class="plan-think-chars" x-show="thinkingText" x-text="thinkingText.length + ' chars'"></span>
-      </div>
-      <pre
-        class="plan-think-pre"
-        x-ref="thinkDisplay"
-        x-text="thinkingText"
-        :class="{'plan-think-pre--collapsed': streamingText}"
-        aria-live="polite"
-        aria-label="Model reasoning"
-      ></pre>
-    </div>
-
     {# Live YAML output — fills as content tokens arrive #}
     <div class="plan-stream-wrap" x-show="streamingText" x-transition.opacity>
       <pre
