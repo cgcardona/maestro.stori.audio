@@ -52,6 +52,7 @@ def _minimal_plan_spec_json() -> str:
                 "depends_on": [],
                 "issues": [
                     {
+                        "id": "smoke-test-p0-001",
                         "title": "Bootstrap the repo",
                         "body": "Set up the project.",
                         "depends_on": [],
@@ -219,13 +220,13 @@ def test_plan_validate_spec_valid_multi_phase() -> None:
                 "label": "0-a",
                 "description": "Phase A",
                 "depends_on": [],
-                "issues": [{"title": "A issue", "body": "Do A.", "depends_on": []}],
+                "issues": [{"id": "multi-p0-001", "title": "A issue", "body": "Do A.", "depends_on": []}],
             },
             {
                 "label": "1-b",
                 "description": "Phase B",
                 "depends_on": ["0-a"],
-                "issues": [{"title": "B issue", "body": "Do B.", "depends_on": []}],
+                "issues": [{"id": "multi-p1-001", "title": "B issue", "body": "Do B.", "depends_on": []}],
             },
         ],
     }

@@ -16,6 +16,7 @@ from pathlib import Path
 
 from agentception.db.engine import get_session
 from agentception.db.models import (
+    ACAgentEvent,
     ACAgentMessage,
     ACAgentRun,
     ACIssue,
@@ -687,4 +688,196 @@ async def get_conductor_history(
         return entries
     except Exception as exc:
         logger.warning("⚠️  get_conductor_history DB query failed (non-fatal): %s", exc)
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Build page — phase board, agent events, thoughts tail
+# ---------------------------------------------------------------------------
+
+
+_PHASE_ORDER = ["phase-0", "phase-1", "phase-2", "phase-3"]
+
+
+async def get_issues_grouped_by_phase(repo: str) -> list[dict[str, Any]]:
+    """Return open+closed issues grouped by phase, ordered phase-0..3.
+
+    Each group dict contains:
+    - ``label``      — phase label string
+    - ``issues``     — list of issue dicts (number, title, state, url)
+    - ``locked``     — True when the preceding phase still has open issues
+    - ``complete``   — True when every issue in this phase is closed
+
+    Issues without a recognised phase label are placed in a trailing
+    ``"unphased"`` group.  Falls back to ``[]`` on DB error.
+    """
+    try:
+        async with get_session() as session:
+            result = await session.execute(
+                select(ACIssue)
+                .where(ACIssue.repo == repo)
+                .order_by(ACIssue.github_number)
+            )
+            rows = result.scalars().all()
+
+        # Group by phase label
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            label = row.phase_label or "unphased"
+            groups.setdefault(label, []).append(
+                {
+                    "number": row.github_number,
+                    "title": row.title,
+                    "state": row.state,
+                    "url": f"https://github.com/{repo}/issues/{row.github_number}",
+                    "labels": json.loads(row.labels_json or "[]"),
+                }
+            )
+
+        # Build ordered list; track which phases are complete for gate logic
+        ordered: list[dict[str, Any]] = []
+        prev_complete = True
+        for phase in _PHASE_ORDER:
+            issues = groups.pop(phase, [])
+            complete = bool(issues) and all(i["state"] == "closed" for i in issues)
+            ordered.append(
+                {
+                    "label": phase,
+                    "issues": issues,
+                    "locked": not prev_complete,
+                    "complete": complete,
+                }
+            )
+            prev_complete = complete or not issues  # empty phase doesn't block
+
+        # Remaining unrecognised labels
+        for label, issues in groups.items():
+            complete = bool(issues) and all(i["state"] == "closed" for i in issues)
+            ordered.append(
+                {
+                    "label": label,
+                    "issues": issues,
+                    "locked": False,
+                    "complete": complete,
+                }
+            )
+
+        return ordered
+    except Exception as exc:
+        logger.warning("⚠️  get_issues_grouped_by_phase DB query failed (non-fatal): %s", exc)
+        return []
+
+
+async def get_runs_for_issue_numbers(
+    issue_numbers: list[int],
+) -> dict[int, dict[str, Any]]:
+    """Return the most-recent agent run keyed by issue number.
+
+    Only issue numbers that have at least one run are included in the result.
+    Falls back to ``{}`` on DB error.
+    """
+    if not issue_numbers:
+        return {}
+    try:
+        async with get_session() as session:
+            result = await session.execute(
+                select(ACAgentRun)
+                .where(ACAgentRun.issue_number.in_(issue_numbers))
+                .order_by(ACAgentRun.spawned_at.desc())
+            )
+            rows = result.scalars().all()
+
+        seen: set[int] = set()
+        out: dict[int, dict[str, Any]] = {}
+        for row in rows:
+            if row.issue_number is None or row.issue_number in seen:
+                continue
+            seen.add(row.issue_number)
+            out[row.issue_number] = {
+                "id": row.id,
+                "role": row.role,
+                "status": row.status,
+                "pr_number": row.pr_number,
+                "branch": row.branch,
+                "spawned_at": row.spawned_at.isoformat(),
+                "last_activity_at": (
+                    row.last_activity_at.isoformat() if row.last_activity_at else None
+                ),
+            }
+        return out
+    except Exception as exc:
+        logger.warning("⚠️  get_runs_for_issue_numbers DB query failed (non-fatal): %s", exc)
+        return {}
+
+
+async def get_agent_events_tail(
+    run_id: str,
+    after_id: int = 0,
+) -> list[dict[str, Any]]:
+    """Return MCP-reported events for *run_id* with ``id > after_id``.
+
+    Used by the inspector SSE stream to incrementally push new events.
+    Falls back to ``[]`` on DB error.
+    """
+    try:
+        async with get_session() as session:
+            result = await session.execute(
+                select(ACAgentEvent)
+                .where(
+                    ACAgentEvent.agent_run_id == run_id,
+                    ACAgentEvent.id > after_id,
+                )
+                .order_by(ACAgentEvent.id)
+            )
+            rows = result.scalars().all()
+
+        return [
+            {
+                "id": row.id,
+                "event_type": row.event_type,
+                "payload": json.loads(row.payload or "{}"),
+                "recorded_at": row.recorded_at.isoformat(),
+            }
+            for row in rows
+        ]
+    except Exception as exc:
+        logger.warning("⚠️  get_agent_events_tail DB query failed (non-fatal): %s", exc)
+        return []
+
+
+async def get_agent_thoughts_tail(
+    run_id: str,
+    after_seq: int = -1,
+    roles: tuple[str, ...] = ("thinking", "assistant"),
+) -> list[dict[str, Any]]:
+    """Return transcript messages for *run_id* with ``sequence_index > after_seq``.
+
+    Defaults to thinking + assistant messages — the raw chain-of-thought stream
+    captured from Cursor transcripts by the poller.  Falls back to ``[]`` on error.
+    """
+    try:
+        async with get_session() as session:
+            result = await session.execute(
+                select(ACAgentMessage)
+                .where(
+                    ACAgentMessage.agent_run_id == run_id,
+                    ACAgentMessage.sequence_index > after_seq,
+                    ACAgentMessage.role.in_(list(roles)),
+                )
+                .order_by(ACAgentMessage.sequence_index)
+                .limit(50)
+            )
+            rows = result.scalars().all()
+
+        return [
+            {
+                "seq": row.sequence_index,
+                "role": row.role,
+                "content": row.content or "",
+                "recorded_at": row.recorded_at.isoformat(),
+            }
+            for row in rows
+        ]
+    except Exception as exc:
+        logger.warning("⚠️  get_agent_thoughts_tail DB query failed (non-fatal): %s", exc)
         return []

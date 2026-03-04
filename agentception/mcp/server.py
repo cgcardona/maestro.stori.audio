@@ -23,6 +23,12 @@ import json
 import logging
 from typing import cast
 
+from agentception.mcp.build_tools import (
+    build_report_blocker,
+    build_report_decision,
+    build_report_done,
+    build_report_step,
+)
 from agentception.mcp.plan_tools import (
     plan_get_labels,
     plan_get_schema,
@@ -128,6 +134,103 @@ TOOLS: list[ACToolDef] = [
                 }
             },
             "required": ["manifest_json"],
+            "additionalProperties": False,
+        },
+    ),
+    # ── Build tools — agents call these to report lifecycle events ──────────
+    ACToolDef(
+        name="build_report_step",
+        description=(
+            "Signal that you are starting a new execution step. "
+            "Call this whenever you begin a distinct phase of work so the "
+            "mission-control dashboard can track your progress in real time."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "issue_number": {
+                    "type": "integer",
+                    "description": "GitHub issue number you are working on.",
+                },
+                "step_name": {
+                    "type": "string",
+                    "description": "Short label for the step (e.g. 'Reading codebase').",
+                },
+                "agent_run_id": {
+                    "type": "string",
+                    "description": "Optional: your worktree id (e.g. 'issue-938').",
+                },
+            },
+            "required": ["issue_number", "step_name"],
+            "additionalProperties": False,
+        },
+    ),
+    ACToolDef(
+        name="build_report_blocker",
+        description=(
+            "Signal that you are blocked and cannot proceed without human input. "
+            "Describe what is blocking you — this creates a visible alert on the dashboard."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "issue_number": {"type": "integer"},
+                "description": {
+                    "type": "string",
+                    "description": "What is blocking you and what you need to proceed.",
+                },
+                "agent_run_id": {"type": "string"},
+            },
+            "required": ["issue_number", "description"],
+            "additionalProperties": False,
+        },
+    ),
+    ACToolDef(
+        name="build_report_decision",
+        description=(
+            "Record a significant architectural or implementation decision you made. "
+            "Use this for choices that affect code structure, dependencies, or approach "
+            "so the team can review your reasoning."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "issue_number": {"type": "integer"},
+                "decision": {
+                    "type": "string",
+                    "description": "One-sentence description of the decision.",
+                },
+                "rationale": {
+                    "type": "string",
+                    "description": "Why you made this decision.",
+                },
+                "agent_run_id": {"type": "string"},
+            },
+            "required": ["issue_number", "decision", "rationale"],
+            "additionalProperties": False,
+        },
+    ),
+    ACToolDef(
+        name="build_report_done",
+        description=(
+            "Signal that you have finished the issue and opened a pull request. "
+            "Call this as your final action after pushing your branch and opening the PR."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "issue_number": {"type": "integer"},
+                "pr_url": {
+                    "type": "string",
+                    "description": "Full URL of the pull request you opened.",
+                },
+                "summary": {
+                    "type": "string",
+                    "description": "Optional one-sentence summary of what you did.",
+                },
+                "agent_run_id": {"type": "string"},
+            },
+            "required": ["issue_number", "pr_url"],
             "additionalProperties": False,
         },
     ),
@@ -237,7 +340,14 @@ def call_tool(name: str, arguments: dict[str, object]) -> ACToolResult:
             isError=is_error,
         )
 
-    if name in ("plan_get_labels", "plan_spawn_coordinator"):
+    if name in (
+        "plan_get_labels",
+        "plan_spawn_coordinator",
+        "build_report_step",
+        "build_report_blocker",
+        "build_report_decision",
+        "build_report_done",
+    ):
         err_text = _tool_result_to_text(
             {"error": f"Tool {name!r} is async — use the async call path"}
         )
@@ -252,6 +362,93 @@ def call_tool(name: str, arguments: dict[str, object]) -> ACToolResult:
         content=[ACToolContent(type="text", text=err_text)],
         isError=True,
     )
+
+
+async def call_tool_async(
+    name: str,
+    arguments: dict[str, object],
+) -> ACToolResult:
+    """Async dispatcher for tools that require async I/O.
+
+    Handles all async tools (``plan_get_labels``, ``plan_spawn_coordinator``,
+    and the four ``build_report_*`` tools).  Falls through to :func:`call_tool`
+    for synchronous tools.
+
+    Args:
+        name:      The tool name.
+        arguments: The tool arguments dict.
+
+    Returns:
+        An :class:`~agentception.mcp.types.ACToolResult`.  Never raises.
+    """
+    if name == "build_report_step":
+        issue_num = arguments.get("issue_number")
+        step = arguments.get("step_name")
+        if not isinstance(issue_num, int) or not isinstance(step, str):
+            return ACToolResult(
+                content=[ACToolContent(type="text", text='{"error":"issue_number (int) and step_name (str) are required"}')],
+                isError=True,
+            )
+        run_id = arguments.get("agent_run_id")
+        result = await build_report_step(issue_num, step, str(run_id) if run_id else None)
+        return ACToolResult(
+            content=[ACToolContent(type="text", text=_tool_result_to_text(result))],
+            isError=False,
+        )
+
+    if name == "build_report_blocker":
+        issue_num = arguments.get("issue_number")
+        desc = arguments.get("description")
+        if not isinstance(issue_num, int) or not isinstance(desc, str):
+            return ACToolResult(
+                content=[ACToolContent(type="text", text='{"error":"issue_number (int) and description (str) are required"}')],
+                isError=True,
+            )
+        run_id = arguments.get("agent_run_id")
+        result = await build_report_blocker(issue_num, desc, str(run_id) if run_id else None)
+        return ACToolResult(
+            content=[ACToolContent(type="text", text=_tool_result_to_text(result))],
+            isError=False,
+        )
+
+    if name == "build_report_decision":
+        issue_num = arguments.get("issue_number")
+        decision = arguments.get("decision")
+        rationale = arguments.get("rationale")
+        if not isinstance(issue_num, int) or not isinstance(decision, str) or not isinstance(rationale, str):
+            return ACToolResult(
+                content=[ACToolContent(type="text", text='{"error":"issue_number, decision, rationale are required"}')],
+                isError=True,
+            )
+        run_id = arguments.get("agent_run_id")
+        result = await build_report_decision(
+            issue_num, decision, rationale, str(run_id) if run_id else None
+        )
+        return ACToolResult(
+            content=[ACToolContent(type="text", text=_tool_result_to_text(result))],
+            isError=False,
+        )
+
+    if name == "build_report_done":
+        issue_num = arguments.get("issue_number")
+        pr_url = arguments.get("pr_url")
+        if not isinstance(issue_num, int) or not isinstance(pr_url, str):
+            return ACToolResult(
+                content=[ACToolContent(type="text", text='{"error":"issue_number (int) and pr_url (str) are required"}')],
+                isError=True,
+            )
+        summary = arguments.get("summary", "")
+        run_id = arguments.get("agent_run_id")
+        result = await build_report_done(
+            issue_num, pr_url, str(summary), str(run_id) if run_id else None
+        )
+        return ACToolResult(
+            content=[ACToolContent(type="text", text=_tool_result_to_text(result))],
+            isError=False,
+        )
+
+    # Delegate sync tools
+    return call_tool(name, arguments)
 
 
 # ---------------------------------------------------------------------------

@@ -282,6 +282,45 @@ class ACRoleVersion(Base):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# ACAgentEvent — structured MCP callback events
+# ---------------------------------------------------------------------------
+
+
+class ACAgentEvent(Base):
+    """One row per deliberate signal pushed by a running agent.
+
+    Agents call the ``build_report_*`` HTTP endpoints (or MCP tools once the
+    stdio transport is wired) to push typed events: step start, blocker
+    encountered, architectural decision made, or work done.
+
+    This is separate from the raw thinking stream in :class:`ACAgentMessage` —
+    these are *intentional* structured reports, not passive transcript reads.
+    """
+
+    __tablename__ = "ac_agent_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    agent_run_id: Mapped[str | None] = mapped_column(
+        String(512), ForeignKey("ac_agent_runs.id"), nullable=True, index=True
+    )
+    issue_number: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    """step_start | blocker | decision | done"""
+
+    payload: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    """JSON-encoded dict — schema varies by event_type."""
+
+    recorded_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+
+
+# ---------------------------------------------------------------------------
+# ACPipelineSnapshot — tick-level time series
+# ---------------------------------------------------------------------------
+
+
 class ACPipelineSnapshot(Base):
     """One row per poller tick — lightweight time-series of pipeline health.
 
