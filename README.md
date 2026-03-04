@@ -269,6 +269,8 @@ See `/docs` for full configuration, deployment, and API reference.
   Postgres    5432    Auth, budgets, committed state
   Qdrant      6333    Semantic retrieval
 
+> **AgentCeption** (the multi-agent pipeline dashboard) has been extracted to [cgcardona/agentception](https://github.com/cgcardona/agentception).
+
 ------------------------------------------------------------------------
 
 ## The Larger Vision

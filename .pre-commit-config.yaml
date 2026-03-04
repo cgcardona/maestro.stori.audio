@@ -12,10 +12,10 @@
 #   pre-commit run --all-files
 #
 # NOTE: mypy hooks require the service containers to be running:
-#   docker compose up -d maestro agentception storpheus
+#   docker compose up -d maestro storpheus
 #
 # Each hook is scoped to its service's file tree so unchanged services are
-# skipped entirely — a change in agentception/ never triggers maestro mypy.
+# skipped entirely.
 
 repos:
   # ── Standard file hygiene ────────────────────────────────────────────────
@@ -44,17 +44,6 @@ repos:
         files: ^(maestro|tests)/
         types: [python]
 
-  # ── Mypy — AgentCeption service ──────────────────────────────────────────
-  - repo: local
-    hooks:
-      - id: mypy-agentception
-        name: "mypy · agentception/"
-        language: system
-        entry: docker compose exec -T agentception mypy agentception/
-        pass_filenames: false
-        files: ^agentception/
-        types: [python]
-
   # ── Mypy — Storpheus service ─────────────────────────────────────────────
   - repo: local
     hooks:
@@ -76,7 +65,7 @@ repos:
         language: pygrep
         entry: "^from __future__ import annotations"
         args: ["--negate"]
-        files: ^(maestro|tests|storpheus|agentception)/.*\\.py$
+        files: ^(maestro|tests|storpheus)/.*\\.py$
         # Exclude generated files that we don't control (alembic templates).
         exclude: "(alembic/script\\.py\\.mako|alembic/versions/)"
         types: [python]
