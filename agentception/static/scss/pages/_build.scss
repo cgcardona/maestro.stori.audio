@@ -103,7 +103,7 @@
   padding: 0.875rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.3rem;
   scrollbar-width: thin;
   scrollbar-color: var(--border-default) transparent;
 
@@ -143,10 +143,14 @@
     border-left: 3px solid var(--border-default);
   }
 
-  // Has no issues
+  // Has no issues — render as a single header-only bar
   &--empty {
     border-left: 3px solid var(--border-subtle);
-    opacity: 0.45;
+    opacity: 0.35;
+
+    .build-phase__header {
+      border-bottom: none;
+    }
   }
 }
 
