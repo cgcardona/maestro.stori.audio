@@ -34,7 +34,7 @@
     <span class="brand">⚡ Agentception</span>
 
     {# ── Primary nav: Plan → Build → Ship ───────────────────────────────── #}
-    <a href="/plan" class="nav-cta {% if request.url.path.startswith('/plan') %}active{% endif %}">Plan</a>
+    <a href="/plan" class="nav-cta {% if request.url.path == '/' or request.url.path.startswith('/plan') %}active{% endif %}">Plan</a>
     <a href="/org-chart"  class="{% if request.url.path.startswith('/org-chart') %}active{% endif %}">Build</a>
     <a href="/controls"   class="{% if request.url.path.startswith('/controls') %}active{% endif %}">Ship</a>
 

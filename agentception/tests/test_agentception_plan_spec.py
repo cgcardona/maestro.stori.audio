@@ -22,16 +22,20 @@ from agentception.models import PlanIssue, PlanPhase, PlanSpec
 # ---------------------------------------------------------------------------
 
 
-def _minimal_issue() -> PlanIssue:
-    return PlanIssue(title="Do the thing", body="## Context\nDo it well.")
+def _minimal_issue(id: str = "test-p0-001") -> PlanIssue:
+    return PlanIssue(id=id, title="Do the thing", body="## Context\nDo it well.")
 
 
-def _minimal_phase(label: str = "0-foundation", depends_on: list[str] | None = None) -> PlanPhase:
+def _minimal_phase(
+    label: str = "0-foundation",
+    depends_on: list[str] | None = None,
+    id_suffix: str = "001",
+) -> PlanPhase:
     return PlanPhase(
         label=label,
         description="Foundation work",
         depends_on=depends_on or [],
-        issues=[_minimal_issue()],
+        issues=[_minimal_issue(f"test-p0-{id_suffix}")],
     )
 
 
@@ -71,11 +75,16 @@ def test_round_trip_multi_phase_with_deps() -> None:
                 description="Core types",
                 depends_on=[],
                 issues=[
-                    PlanIssue(title="Define AuthToken model", body="Token model body."),
                     PlanIssue(
+                        id="auth-rewrite-p0-001",
+                        title="Define AuthToken model",
+                        body="Token model body.",
+                    ),
+                    PlanIssue(
+                        id="auth-rewrite-p0-002",
                         title="Add JWT validation",
                         body="JWT body.",
-                        depends_on=["Define AuthToken model"],
+                        depends_on=["auth-rewrite-p0-001"],
                     ),
                 ],
             ),
@@ -84,7 +93,11 @@ def test_round_trip_multi_phase_with_deps() -> None:
                 description="API endpoints",
                 depends_on=["0-foundation"],
                 issues=[
-                    PlanIssue(title="POST /auth/login endpoint", body="Login endpoint body."),
+                    PlanIssue(
+                        id="auth-rewrite-p1-001",
+                        title="POST /auth/login endpoint",
+                        body="Login endpoint body.",
+                    ),
                 ],
             ),
         ],
@@ -103,7 +116,7 @@ def test_round_trip_preserves_unicode() -> None:
                 description="Résumé des tâches — 日本語",
                 depends_on=[],
                 issues=[
-                    PlanIssue(title="Titre: résumé", body="Corps: 日本語テスト 🎵"),
+                    PlanIssue(id="unicode-test-p0-001", title="Titre: résumé", body="Corps: 日本語テスト 🎵"),
                 ],
             )
         ],
@@ -138,13 +151,13 @@ def test_forward_reference_raises_value_error() -> None:
                     label="0-foundation",
                     description="Phase A",
                     depends_on=["1-api"],  # forward reference — 1-api hasn't been defined yet
-                    issues=[_minimal_issue()],
+                    issues=[_minimal_issue("bad-deps-p0-001")],
                 ),
                 PlanPhase(
                     label="1-api",
                     description="Phase B",
                     depends_on=[],
-                    issues=[_minimal_issue()],
+                    issues=[_minimal_issue("bad-deps-p1-001")],
                 ),
             ],
         )
@@ -188,12 +201,12 @@ def test_valid_dag_with_multiple_deps() -> None:
         initiative="multi-dep",
         phases=[
             _minimal_phase("0-a"),
-            _minimal_phase("0-b"),
+            _minimal_phase("0-b", id_suffix="002"),
             PlanPhase(
                 label="1-combined",
                 description="Depends on both",
                 depends_on=["0-a", "0-b"],
-                issues=[_minimal_issue()],
+                issues=[_minimal_issue("test-p1-001")],
             ),
         ],
     )
@@ -313,7 +326,8 @@ def test_from_yaml_accepts_valid_yaml() -> None:
             description: Foundation phase
             depends_on: []
             issues:
-              - title: Bootstrap the repo
+              - id: smoke-test-p0-001
+                title: Bootstrap the repo
                 body: |
                   Set up the initial project structure.
                 depends_on: []

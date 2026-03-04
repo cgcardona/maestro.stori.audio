@@ -385,48 +385,107 @@
   padding: .5rem .75rem;
 }
 
-// ── Done state ────────────────────────────────────────────────────────────
-.plan-done {
-  text-align: center;
-  padding: 3rem 1rem;
+// ── Filing progress strip (launching state) ────────────────────────────────
+.plan-filing-progress {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  margin-top: 1rem;
+  padding: .6rem .9rem;
+  background: var(--bg-secondary, #1a1a2e);
+  border: 1px solid var(--border, #2a2a3e);
+  border-radius: 6px;
+  font-size: .85rem;
+  color: var(--text-secondary, #aaa);
 }
 
-.plan-done-badge { font-size: 3rem; margin-bottom: .75rem; }
-.plan-done-title { font-size: 1.5rem; font-weight: 700; margin: 0 0 .5rem; }
+// Small spinner variant for inline use.
+.plan-spinner--sm {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+  flex-shrink: 0;
+}
+
+// ── Done state ────────────────────────────────────────────────────────────
+.plan-done {
+  padding: 2.5rem 0;
+}
+
+.plan-done-badge { font-size: 3rem; margin-bottom: .75rem; text-align: center; }
+.plan-done-title { font-size: 1.5rem; font-weight: 700; margin: 0 0 .5rem; text-align: center; }
 
 .plan-done-sub {
   color: var(--text-secondary, #999);
   font-size: .9rem;
-  margin: 0 0 1.75rem;
-  max-width: 480px;
-  margin-left: auto;
-  margin-right: auto;
+  margin: 0 0 2rem;
+  text-align: center;
 }
 
-.plan-done-dl {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: .35rem .75rem;
+// Per-phase issue list in done state.
+.plan-done-issues {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-bottom: 2rem;
+}
+
+.plan-done-phase {
   background: var(--bg-secondary, #1a1a2e);
   border: 1px solid var(--border, #2a2a3e);
   border-radius: 8px;
-  padding: 1rem 1.25rem;
-  text-align: left;
-  max-width: 480px;
-  margin: 0 auto 1.75rem;
-  font-size: .85rem;
+  overflow: hidden;
+}
 
-  dt { color: var(--text-muted, #666); font-weight: 500; }
-  dd { margin: 0; }
+.plan-done-phase-label {
+  font-size: .7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text-muted, #666);
+  padding: .5rem .9rem;
+  border-bottom: 1px solid var(--border, #2a2a3e);
+  margin: 0;
+  background: rgba(255, 255, 255, .02);
+}
 
-  code {
-    font-family: monospace;
-    font-size: .8rem;
-    color: var(--accent-bright, #a78bfa);
-    background: rgba(124, 58, 237, .08);
-    padding: .1rem .35rem;
-    border-radius: 3px;
-  }
+.plan-done-issue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.plan-done-issue-item {
+  border-bottom: 1px solid var(--border, #2a2a3e);
+
+  &:last-child { border-bottom: none; }
+}
+
+.plan-done-issue-link {
+  display: flex;
+  align-items: baseline;
+  gap: .6rem;
+  padding: .6rem .9rem;
+  text-decoration: none;
+  color: inherit;
+  transition: background .15s;
+
+  &:hover { background: rgba(255, 255, 255, .04); }
+}
+
+.plan-done-issue-num {
+  font-family: monospace;
+  font-size: .8rem;
+  color: var(--accent-bright, #a78bfa);
+  flex-shrink: 0;
+}
+
+.plan-done-issue-title {
+  font-size: .875rem;
+  color: var(--text-primary, #e5e5e5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .plan-done-actions { display: flex; justify-content: center; gap: .75rem; }
