@@ -14,8 +14,30 @@ from __future__ import annotations
 import logging
 
 from agentception.db.persist import persist_agent_event
+from agentception.db.queries import get_pending_launches
 
 logger = logging.getLogger(__name__)
+
+
+async def build_get_pending_launches() -> dict[str, object]:
+    """Return all pending launch records from the AgentCeption DB.
+
+    The Dispatcher calls this once to discover what the UI has queued.
+    Each item in ``pending`` contains:
+      - ``run_id``             — worktree id (e.g. "issue-1234")
+      - ``issue_number``       — GitHub issue number
+      - ``role``               — role slug (e.g. "cto", "python-developer")
+      - ``branch``             — git branch to work on
+      - ``host_worktree_path`` — full path on the HOST filesystem
+      - ``batch_id``           — batch fingerprint
+
+    The ``role`` field is the tree entry point — the Dispatcher spawns
+    whatever role was assigned. A leaf worker runs directly; a manager
+    (VP, CTO) reads its role file and spawns its own children.
+    """
+    launches = await get_pending_launches()
+    logger.info("✅ build_get_pending_launches: %d pending", len(launches))
+    return {"pending": launches, "count": len(launches)}
 
 
 async def build_report_step(

@@ -269,12 +269,15 @@ async def _upsert_prs(
 # ---------------------------------------------------------------------------
 
 
-_ACTIVE_STATUSES = {"implementing", "reviewing", "stale"}
+_ACTIVE_STATUSES = {"implementing", "reviewing", "stale", "pending_launch"}
 """Statuses that indicate a run is expected to have a live worktree.
 
 Runs in these states that are absent from the current poller tick are
 orphaned (worktree was removed without a clean status transition) and
 must be flipped to ``unknown`` so the UI does not show phantom agents.
+
+``pending_launch`` is included so that dispatch-created runs are not
+swept to ``unknown`` before the coordinator picks them up.
 """
 
 
@@ -316,7 +319,10 @@ async def _upsert_agent_runs(
                 )
             )
         else:
-            existing.status = agent.status.value
+            # Never overwrite a pending_launch status from the poller — only
+            # the acknowledge endpoint may advance that transition.
+            if existing.status != "pending_launch":
+                existing.status = agent.status.value
             existing.pr_number = agent.pr_number
             existing.last_activity_at = now
 
@@ -426,6 +432,91 @@ async def persist_wave_complete(wave_id: str, spawn_count: int, skip_count: int)
 # ---------------------------------------------------------------------------
 # Agent messages (async fire-and-forget)
 # ---------------------------------------------------------------------------
+
+
+async def persist_agent_run_dispatch(
+    run_id: str,
+    issue_number: int,
+    role: str,
+    branch: str,
+    worktree_path: str,
+    batch_id: str,
+    host_worktree_path: str,
+) -> None:
+    """Insert an ACAgentRun row with status ``pending_launch`` at dispatch time.
+
+    Called by ``POST /api/build/dispatch`` immediately after the worktree and
+    ``.agent-task`` file are created.  The coordinator agent reads these rows
+    via ``build_get_pending_launches`` and transitions them to ``implementing``
+    when it claims the work.
+
+    ``host_worktree_path`` is stored in the ``spawn_mode`` field as a JSON
+    blob because ACAgentRun has no dedicated host-path column — this is the
+    least-invasive way to pass it to the coordinator without a migration.
+
+    Best-effort — swallows exceptions so a DB outage never blocks dispatch.
+    """
+    import json as _json
+
+    try:
+        async with get_session() as session:
+            result = await session.execute(
+                select(ACAgentRun).where(ACAgentRun.id == run_id)
+            )
+            existing = result.scalar_one_or_none()
+            if existing is not None:
+                # Already exists (re-dispatch after worktree removed). Reset.
+                existing.status = "pending_launch"
+                existing.last_activity_at = _now()
+            else:
+                session.add(
+                    ACAgentRun(
+                        id=run_id,
+                        wave_id=None,
+                        issue_number=issue_number,
+                        pr_number=None,
+                        branch=branch,
+                        worktree_path=worktree_path,
+                        role=role,
+                        status="pending_launch",
+                        attempt_number=0,
+                        spawn_mode=_json.dumps({"host_worktree": host_worktree_path}),
+                        batch_id=batch_id,
+                        spawned_at=_now(),
+                        last_activity_at=_now(),
+                    )
+                )
+            await session.commit()
+        logger.info("✅ persist_agent_run_dispatch: run_id=%s issue=%d", run_id, issue_number)
+    except Exception as exc:
+        logger.warning("⚠️  persist_agent_run_dispatch failed (non-fatal): %s", exc)
+
+
+async def acknowledge_agent_run(run_id: str) -> bool:
+    """Transition a ``pending_launch`` run to ``implementing``.
+
+    Called by the coordinator agent via ``POST /api/build/acknowledge/{run_id}``
+    to atomically claim the run before spawning its Task worker.
+
+    Returns ``True`` when the transition succeeded, ``False`` when the run was
+    not found or was not in ``pending_launch`` state (idempotency guard).
+    """
+    try:
+        async with get_session() as session:
+            result = await session.execute(
+                select(ACAgentRun).where(ACAgentRun.id == run_id)
+            )
+            run = result.scalar_one_or_none()
+            if run is None or run.status != "pending_launch":
+                return False
+            run.status = "implementing"
+            run.last_activity_at = _now()
+            await session.commit()
+        logger.info("✅ acknowledge_agent_run: %s → implementing", run_id)
+        return True
+    except Exception as exc:
+        logger.warning("⚠️  acknowledge_agent_run failed: %s", exc)
+        return False
 
 
 async def persist_agent_event(

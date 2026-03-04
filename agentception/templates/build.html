@@ -159,9 +159,16 @@
 
           <template x-if="dispatchSuccess">
             <div class="build-modal__success">
-              <p>✅ Worktree created!</p>
-              <p class="build-modal__success-path" x-text="'Open in Cursor: ' + dispatchResult.worktree"></p>
-              <p class="build-modal__success-hint">The <code>.agent-task</code> file is ready. Open the worktree folder in Cursor and start the agent.</p>
+              <p>⏳ Queued for launch</p>
+              <p class="build-modal__success-hint">
+                Issue <strong x-text="'#' + dispatchIssue.number"></strong>
+                is ready with role <strong x-text="dispatchResult.role ?? dispatchRole"></strong>.
+              </p>
+              <p class="build-modal__success-hint">
+                Paste the <strong>Dispatcher prompt</strong> into Cursor to launch it
+                along with any other queued issues.
+              </p>
+              <pre class="build-modal__prompt-hint" x-text="'Worktree: ' + dispatchResult.host_worktree"></pre>
             </div>
           </template>
         </div>
