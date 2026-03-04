@@ -2,18 +2,24 @@
 {% set closed_count = group.issues | selectattr("state", "equalto", "closed") | list | length %}
 {% set total_count  = group.issues | length %}
 {% set is_unphased  = group.label == "unphased" %}
+{% set default_open = not group.locked and not group.complete %}
 {% if group.issues or is_unphased %}
+
 <div class="build-phase
   {%- if group.complete %} build-phase--complete
   {%- elif group.locked %} build-phase--locked
   {%- elif not group.issues %} build-phase--empty
   {%- else %} build-phase--active
   {%- endif %}"
-  {% if is_unphased %}x-data="{ limit: 10 }"{% endif %}
+  {% if is_unphased %}
+  x-data="{ open: true, limit: 10 }"
+  {% else %}
+  x-data="{ open: {{ 'true' if default_open else 'false' }} }"
+  {% endif %}
 >
 
-  {# ── Phase header ─────────────────────────────────────────────────────── #}
-  <div class="build-phase__header">
+  {# ── Phase header — click to collapse/expand ──────────────────────────── #}
+  <div class="build-phase__header" @click="open = !open">
     <span class="build-phase__icon">
       {%- if group.complete %}✅
       {%- elif group.locked %}🔒
@@ -28,21 +34,22 @@
     {% if group.locked %}
     <span class="build-phase__gate">locked</span>
     {% endif %}
+    <span class="build-phase__chevron" :class="{ 'build-phase__chevron--open': open }">›</span>
   </div>
 
-  {# ── Issue list ───────────────────────────────────────────────────────── #}
+  {# ── Issue list — x-show only, no x-collapse plugin needed ───────────── #}
   {% if group.issues %}
-  <ul class="build-phase__issues">
+  <ul class="build-phase__issues" x-show="open">
     {% for issue in group.issues %}
     {% set run = issue.run %}
     {% set is_running = run and run.status in ('implementing', 'pending_launch', 'IMPLEMENTING', 'PENDING_LAUNCH') %}
 
+    {# No x-data on <li> — keeps parent scope visible so limit works #}
     <li class="build-issue
       {%- if issue.state == 'closed' %} build-issue--closed
       {%- elif is_running %} build-issue--active build-issue--running
       {%- elif run %} build-issue--active
       {%- endif %}"
-      x-data
       @click='$dispatch("inspect-issue", {{ issue | tojson }})'
       {% if is_unphased %}x-show="{{ loop.index0 }} < limit"{% endif %}
     >
@@ -71,10 +78,8 @@
           {%- endif %}"></span>
       </div>
 
-      {# title #}
       <p class="build-issue__title">{{ issue.title }}</p>
 
-      {# footer: run metadata or assign button #}
       <div class="build-issue__footer">
         {% if run %}
         <div class="build-issue__run">
@@ -103,7 +108,7 @@
 
   {# "Show more" for unphased bucket #}
   {% if is_unphased and total_count > 10 %}
-  <div class="build-load-more" x-show="limit < {{ total_count }}">
+  <div class="build-load-more" x-show="open && limit < {{ total_count }}">
     <button class="build-load-more__btn"
             @click.stop="limit = Math.min(limit + 20, {{ total_count }})"
             x-text="'Show ' + Math.min(20, {{ total_count }} - limit) + ' more of {{ total_count }}'">
