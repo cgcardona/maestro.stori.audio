@@ -2,7 +2,7 @@
 {% set closed_count = group.issues | selectattr("state", "equalto", "closed") | list | length %}
 {% set total_count  = group.issues | length %}
 {% set is_unphased  = group.label == "unphased" %}
-
+{% if group.issues or is_unphased %}
 <div class="build-phase
   {%- if group.complete %} build-phase--complete
   {%- elif group.locked %} build-phase--locked
@@ -114,4 +114,5 @@
   {% endif %}
 
 </div>
+{% endif %}
 {% endfor %}
