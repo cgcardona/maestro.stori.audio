@@ -1,73 +1,114 @@
 {% for group in groups %}
+{% set closed_count = group.issues | selectattr("state", "equalto", "closed") | list | length %}
+{% set total_count  = group.issues | length %}
+{% set is_unphased  = group.label == "unphased" %}
+
 <div class="build-phase
-  {% if group.complete %} build-phase--complete
-  {% elif group.locked %} build-phase--locked
-  {% elif group.issues %} build-phase--active
-  {% else %} build-phase--empty
-  {% endif %}"
+  {%- if group.complete %} build-phase--complete
+  {%- elif group.locked %} build-phase--locked
+  {%- elif not group.issues %} build-phase--empty
+  {%- else %} build-phase--active
+  {%- endif %}"
+  {% if is_unphased %}x-data="{ limit: 10 }"{% endif %}
 >
+
+  {# ── Phase header ─────────────────────────────────────────────────────── #}
   <div class="build-phase__header">
     <span class="build-phase__icon">
-      {% if group.complete %}✅{% elif group.locked %}🔒{% elif group.issues %}🔓{% else %}○{% endif %}
+      {%- if group.complete %}✅
+      {%- elif group.locked %}🔒
+      {%- elif group.issues %}🔓
+      {%- else %}○
+      {%- endif %}
     </span>
     <span class="build-phase__label">{{ group.label }}</span>
-    {% set closed = group.issues | selectattr("state", "equalto", "closed") | list %}
-    <span class="build-phase__count">{{ closed | length }}/{{ group.issues | length }}</span>
+    {% if total_count > 0 %}
+    <span class="build-phase__progress">{{ closed_count }}&thinsp;/&thinsp;{{ total_count }}</span>
+    {% endif %}
     {% if group.locked %}
-    <span class="build-phase__gate">previous phase open</span>
+    <span class="build-phase__gate">locked</span>
     {% endif %}
   </div>
 
+  {# ── Issue list ───────────────────────────────────────────────────────── #}
   {% if group.issues %}
   <ul class="build-phase__issues">
     {% for issue in group.issues %}
     {% set run = issue.run %}
+    {% set is_running = run and run.status in ('implementing', 'pending_launch', 'IMPLEMENTING', 'PENDING_LAUNCH') %}
+
     <li class="build-issue
-      {% if issue.state == 'closed' %} build-issue--closed
-      {% elif run %} build-issue--active
-      {% else %} build-issue--open
-      {% endif %}"
+      {%- if issue.state == 'closed' %} build-issue--closed
+      {%- elif is_running %} build-issue--active build-issue--running
+      {%- elif run %} build-issue--active
+      {%- endif %}"
       x-data
       @click='$dispatch("inspect-issue", {{ issue | tojson }})'
+      {% if is_unphased %}x-show="$index < limit"{% endif %}
     >
-      <div class="build-issue__meta">
-        <a class="build-issue__number" href="{{ issue.url }}" target="_blank" rel="noopener"
+
+      {# header: number + role label + state dot #}
+      <div class="build-issue__header">
+        <a class="build-issue__number"
+           href="{{ issue.url }}" target="_blank" rel="noopener"
            @click.stop>#{{ issue.number }}</a>
+
+        {# show first non-phase label as a pill #}
+        {% set role_label = issue.labels | reject("match", "phase-[0-9]+") | reject("equalto", "unphased") | first | default(none) %}
+        {% if role_label %}
+        <span class="build-issue__label-pill">{{ role_label }}</span>
+        {% endif %}
+
         <span class="build-issue__state-dot
-          {% if issue.state == 'closed' %} build-issue__state-dot--closed
-          {% elif run and run.status in ('IMPLEMENTING', 'REVIEWING') %} build-issue__state-dot--active
-          {% else %} build-issue__state-dot--open
-          {% endif %}"></span>
+          {%- if issue.state == 'closed' %} build-issue__state-dot--closed
+          {%- elif is_running %} build-issue__state-dot--active
+          {%- else %} build-issue__state-dot--open
+          {%- endif %}"></span>
       </div>
 
+      {# title #}
       <p class="build-issue__title">{{ issue.title }}</p>
 
-      {% if run %}
-      <div class="build-issue__run">
-        <span class="build-issue__role">{{ run.role }}</span>
-        <span class="build-issue__status build-issue__status--{{ run.status | lower }}">
-          {{ run.status }}
-        </span>
-        {% if run.pr_number %}
-        <a class="build-issue__pr" href="https://github.com/{{ repo }}/pull/{{ run.pr_number }}"
-           target="_blank" rel="noopener" @click.stop>
-          PR #{{ run.pr_number }}
-        </a>
-        {% endif %}
-      </div>
-      {% elif not group.locked and issue.state == 'open' %}
-      <div class="build-issue__dispatch">
+      {# footer: run metadata or assign button #}
+      <div class="build-issue__footer">
+        {% if run %}
+        <div class="build-issue__run">
+          <span class="build-issue__role">{{ run.role }}</span>
+          <span class="build-issue__status build-issue__status--{{ run.status | lower }}">
+            {{ run.status }}
+          </span>
+          {% if run.pr_number %}
+          <a class="build-issue__pr"
+             href="https://github.com/{{ repo }}/pull/{{ run.pr_number }}"
+             target="_blank" rel="noopener"
+             @click.stop>PR&thinsp;#{{ run.pr_number }}</a>
+          {% endif %}
+        </div>
+        {% elif not group.locked and issue.state == 'open' %}
         <button class="build-issue__assign-btn"
                 @click.stop='$dispatch("open-dispatch", {{ issue | tojson }})'>
           Assign →
         </button>
+        {% endif %}
       </div>
-      {% endif %}
+
     </li>
     {% endfor %}
   </ul>
+
+  {# "Show more" for unphased bucket #}
+  {% if is_unphased and total_count > 10 %}
+  <div class="build-load-more" x-show="limit < {{ total_count }}">
+    <button class="build-load-more__btn"
+            @click.stop="limit = Math.min(limit + 20, {{ total_count }})"
+            x-text="'Show ' + Math.min(20, {{ total_count }} - limit) + ' more of {{ total_count }}'">
+    </button>
+  </div>
+  {% endif %}
+
   {% else %}
   <p class="build-phase__empty">No issues in this phase.</p>
   {% endif %}
+
 </div>
 {% endfor %}
