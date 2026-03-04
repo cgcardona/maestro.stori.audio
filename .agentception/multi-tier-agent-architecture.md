@@ -999,7 +999,7 @@ The machine handles all mechanical work. Humans are needed for:
 - [ ] `agent_engine/requirements.txt` — pydantic, pytest (host-side deps only)
 - [ ] `.env.agent_engine.example` — `AGENT_MAX_WORKERS_PER_STAGE`, `REGISTRY_ISSUE`, etc.
 
-### Manager prompts (`.cursor/`)
+### Manager prompts (`.agentception/`)
 
 - [ ] `MANAGER_TRIAGE.md` — full manager lifecycle for Stage 1
 - [ ] `MANAGER_BUILD.md` — full manager lifecycle for Stage 2

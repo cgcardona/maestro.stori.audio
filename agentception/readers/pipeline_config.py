@@ -1,7 +1,7 @@
 """Pipeline configuration reader/writer for AgentCeption.
 
 The canonical source of truth for pipeline allocation parameters is
-``.cursor/pipeline-config.json`` in the repository root.  The CTO and
+``.agentception/pipeline-config.json`` in the repository root.  The CTO and
 Engineering VP role files read this file at the start of every loop/seed
 cycle instead of relying on hardcoded constants.
 
@@ -34,7 +34,7 @@ _DEFAULTS: dict[str, int | list[str]] = {
     ],
 }
 
-_CONFIG_PATH: Path = settings.repo_dir / ".cursor" / "pipeline-config.json"
+_CONFIG_PATH: Path = settings.ac_dir / "pipeline-config.json"
 
 
 def _config_path() -> Path:

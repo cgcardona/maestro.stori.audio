@@ -56,7 +56,7 @@ _TAXONOMY_PATH = (
 
 def _pipeline_config_path() -> Path:
     """Return the canonical path to pipeline-config.json for the active repo."""
-    return settings.repo_dir / ".cursor" / "pipeline-config.json"
+    return settings.ac_dir / "pipeline-config.json"
 
 
 # ---------------------------------------------------------------------------

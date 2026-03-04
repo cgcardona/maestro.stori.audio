@@ -40,13 +40,14 @@ def client() -> Generator[TestClient, None, None]:
 def tmp_pipeline_config(tmp_path: Path) -> Generator[Path, None, None]:
     """Write a minimal pipeline-config.json to a temp dir and patch settings.repo_dir."""
     config = {"active_org": None}
-    config_dir = tmp_path / ".cursor"
+    config_dir = tmp_path / ".agentception"
     config_dir.mkdir(parents=True)
     config_file = config_dir / "pipeline-config.json"
     config_file.write_text(json.dumps(config), encoding="utf-8")
 
     with patch("agentception.routes.ui.org_chart.settings") as mock_settings:
         mock_settings.repo_dir = tmp_path
+        mock_settings.ac_dir = config_dir
         yield config_file
 
 

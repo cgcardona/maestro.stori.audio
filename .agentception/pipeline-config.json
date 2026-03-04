@@ -13,8 +13,8 @@
   "ab_mode": {
     "enabled": false,
     "target_role": "python-developer",
-    "variant_a_file": ".cursor/roles/python-developer.md",
-    "variant_b_file": ".cursor/roles/python-developer-v2.md"
+    "variant_a_file": ".agentception/roles/python-developer.md",
+    "variant_b_file": ".agentception/roles/python-developer-v2.md"
   },
   "active_project": "maestro",
   "projects": [

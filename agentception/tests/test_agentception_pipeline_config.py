@@ -260,7 +260,7 @@ async def test_settings_reads_active_project(tmp_path: Path) -> None:
     """
     from agentception.config import AgentCeptionSettings
 
-    cursor_dir = tmp_path / ".cursor"
+    cursor_dir = tmp_path / ".agentception"
     cursor_dir.mkdir(parents=True)
     config_data = {
         "max_eng_vps": 1,

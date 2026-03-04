@@ -35,7 +35,7 @@ _UTC = datetime.timezone.utc
 _WORKFLOW_LABEL_PREFIX = "ac-workflow/"
 
 # Path to pipeline-config.json — same resolution used by the org-chart route.
-_PIPELINE_CONFIG_PATH: Path = settings.repo_dir / ".cursor" / "pipeline-config.json"
+_PIPELINE_CONFIG_PATH: Path = settings.ac_dir / "pipeline-config.json"
 
 
 # ---------------------------------------------------------------------------

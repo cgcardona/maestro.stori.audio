@@ -294,7 +294,7 @@ for entry in "${SELECTED_ISSUES[@]}"; do
     FIGURE="hopper"
   fi
   COGNITIVE_ARCH_VAL="${FIGURE}:${SKILLS}"
-  ROLE_FILE_VAL="$REPO/.cursor/roles/${AGENT_ROLE}.md"
+  ROLE_FILE_VAL="$REPO/.agentception/roles/${AGENT_ROLE}.md"
 
   cat > "$WT/.agent-task" << TASKEOF
 WORKFLOW=issue-to-pr
@@ -430,7 +430,7 @@ the `dev` branch with uncommitted changes.
 
 ### Command policy
 
-Consult `.cursor/agent-command-policy.md` for the full tier list. Summary:
+Consult `.agentception/agent-command-policy.md` for the full tier list. Summary:
 - **Green (auto-allow):** `ls`, `git status/log/diff/fetch`, `gh pr view`, `mypy`, `pytest`, `rg`
 - **Yellow (review before running):** `docker compose build`, `rm <single file>`, `git rebase`
 - **Red (never):** `rm -rf`, `git push --force`, `git push origin dev`, `docker system prune`
@@ -442,7 +442,7 @@ Consult `.cursor/agent-command-policy.md` for the full tier list. Summary:
 ```
 PARALLEL AGENT COORDINATION — ISSUE TO PR
 
-Read .cursor/agent-command-policy.md before issuing any shell commands.
+Read .agentception/agent-command-policy.md before issuing any shell commands.
 Green-tier commands run without confirmation. Yellow = check scope first.
 Red = never, ask the user instead.
 
@@ -837,7 +837,7 @@ Maestro-Session: $AGENT_SESSION"
   git fetch origin
   git merge origin/dev
 
-  ⚡ CONFLICT SHORTCUT: open .cursor/conflict-rules.md FIRST.
+  ⚡ CONFLICT SHORTCUT: open .agentception/conflict-rules.md FIRST.
   Every common conflict has a one-line rule. NO sed/grep/hexdump loops.
   maestro/api/routes/musehub/__init__.py NEVER conflicts (auto-discovery).
   app.py, muse-vcs.md, type-contracts.md use union merge (.gitattributes).
@@ -1112,7 +1112,7 @@ FILES_CHANGED=$PR_FILES_VAL
 MERGE_AFTER=none
 HAS_MIGRATION=$HAS_MIG_VAL
 ROLE=pr-reviewer
-ROLE_FILE=$HOME/dev/tellurstori/maestro/.cursor/roles/pr-reviewer.md
+ROLE_FILE=$HOME/dev/tellurstori/maestro/.agentception/roles/pr-reviewer.md
 COGNITIVE_ARCH=${REVIEWER_ARCH}
 BATCH_ID=${BATCH_ID:-none}
 WAVE=${WAVE:-unset}

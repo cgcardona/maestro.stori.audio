@@ -37,14 +37,16 @@ client = TestClient(app)
 
 def _make_repo(tmp_path: Path) -> Path:
     """Create a minimal fake repo with managed .cursor/ files."""
-    cursor = tmp_path / ".cursor"
-    cursor.mkdir(parents=True, exist_ok=True)
-    roles = cursor / "roles"
+    ac = tmp_path / ".agentception"
+    ac.mkdir(parents=True, exist_ok=True)
+    roles = ac / "roles"
     roles.mkdir(parents=True, exist_ok=True)
     (roles / "python-developer.md").write_text("# Python Developer", encoding="utf-8")
-    (cursor / "PARALLEL_ISSUE_TO_PR.md").write_text("# Parallel", encoding="utf-8")
-    (cursor / "pipeline-config.json").write_text('{"max_eng_vps": 1}', encoding="utf-8")
-    (cursor / "agent-command-policy.md").write_text("# Policy", encoding="utf-8")
+    prompts = ac / "prompts"
+    prompts.mkdir(parents=True, exist_ok=True)
+    (prompts / "parallel-issue-to-pr.md").write_text("# Parallel", encoding="utf-8")
+    (ac / "pipeline-config.json").write_text('{"max_eng_vps": 1}', encoding="utf-8")
+    (ac / "agent-command-policy.md").write_text("# Policy", encoding="utf-8")
     return tmp_path
 
 
@@ -93,10 +95,10 @@ def test_export_includes_all_managed_files(tmp_path: Path) -> None:
     with tarfile.open(fileobj=buf, mode="r:gz") as tar:
         names = tar.getnames()
 
-    assert ".cursor/roles/python-developer.md" in names
-    assert ".cursor/PARALLEL_ISSUE_TO_PR.md" in names
-    assert ".cursor/pipeline-config.json" in names
-    assert ".cursor/agent-command-policy.md" in names
+    assert ".agentception/roles/python-developer.md" in names
+    assert ".agentception/prompts/parallel-issue-to-pr.md" in names
+    assert ".agentception/pipeline-config.json" in names
+    assert ".agentception/agent-command-policy.md" in names
 
 
 def test_export_manifest_contains_correct_metadata(tmp_path: Path) -> None:
@@ -123,7 +125,7 @@ def test_export_manifest_contains_correct_metadata(tmp_path: Path) -> None:
     assert manifest.name == "my-template"
     assert manifest.version == "0.9.1"
     assert manifest.gh_repo == "org/myrepo"
-    assert ".cursor/pipeline-config.json" in manifest.files
+    assert ".agentception/pipeline-config.json" in manifest.files
 
 
 def test_export_persists_archive_to_store(tmp_path: Path) -> None:
@@ -161,8 +163,8 @@ def test_import_extracts_to_target(tmp_path: Path) -> None:
     result = import_template(archive_bytes, str(target_repo))
 
     assert len(result.extracted) > 0
-    assert (target_repo / ".cursor" / "pipeline-config.json").is_file()
-    assert (target_repo / ".cursor" / "roles" / "python-developer.md").is_file()
+    assert (target_repo / ".agentception" / "pipeline-config.json").is_file()
+    assert (target_repo / ".agentception" / "roles" / "python-developer.md").is_file()
 
 
 def test_import_detects_conflicts(tmp_path: Path) -> None:
@@ -180,15 +182,15 @@ def test_import_detects_conflicts(tmp_path: Path) -> None:
 
     # Pre-create one of the managed files in target to simulate a conflict.
     target_repo = tmp_path / "target"
-    target_cursor = target_repo / ".cursor"
-    target_cursor.mkdir(parents=True)
-    existing = target_cursor / "pipeline-config.json"
+    target_ac = target_repo / ".agentception"
+    target_ac.mkdir(parents=True)
+    existing = target_ac / "pipeline-config.json"
     existing.write_text('{"max_eng_vps": 99}', encoding="utf-8")
 
     result = import_template(archive_bytes, str(target_repo))
 
     conflict_paths = {c.path for c in result.conflicts if c.exists}
-    assert ".cursor/pipeline-config.json" in conflict_paths
+    assert ".agentception/pipeline-config.json" in conflict_paths
 
 
 def test_import_raises_on_missing_manifest(tmp_path: Path) -> None:
@@ -196,7 +198,7 @@ def test_import_raises_on_missing_manifest(tmp_path: Path) -> None:
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
         content = b"some content"
-        info = tarfile.TarInfo(name=".cursor/roles/test.md")
+        info = tarfile.TarInfo(name=".agentception/roles/test.md")
         info.size = len(content)
         tar.addfile(info, io.BytesIO(content))
 

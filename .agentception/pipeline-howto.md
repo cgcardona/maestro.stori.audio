@@ -57,30 +57,30 @@ agent. The pool stays at N concurrent workers continuously until the queue drain
 
 | File | Purpose |
 |------|---------|
-| `.cursor/PARALLEL_ISSUE_TO_PR.md` | Full kickoff for implementation leaf agents |
-| `.cursor/PARALLEL_PR_REVIEW.md` | Full kickoff for review leaf agents |
-| `.cursor/PARALLEL_BUGS_TO_ISSUES.md` | Full kickoff for issue-creation agents |
-| `.cursor/PARALLEL_CONDUCTOR.md` | Full kickoff for a meta-conductor (single-agent orchestration) |
+| `.agentception/prompts/parallel-issue-to-pr.md` | Full kickoff for implementation leaf agents |
+| `.agentception/prompts/parallel-pr-review.md` | Full kickoff for review leaf agents |
+| `.agentception/prompts/parallel-bugs-to-issues.md` | Full kickoff for issue-creation agents |
+| `.agentception/prompts/parallel-conductor.md` | Full kickoff for a meta-conductor (single-agent orchestration) |
 
 ### Cognitive Architecture (role files — who each agent IS)
 
 | File | Used by |
 |------|---------|
-| `.cursor/roles/cto.md` | CTO agent |
-| `.cursor/roles/engineering-manager.md` | Engineering Manager |
-| `.cursor/roles/qa-manager.md` | QA Manager |
-| `.cursor/roles/python-developer.md` | Leaf implementation agents (Python/API work) |
-| `.cursor/roles/muse-specialist.md` | Leaf agents on Muse VCS / musical analysis work |
-| `.cursor/roles/database-architect.md` | Leaf agents on migrations / seed data |
-| `.cursor/roles/pr-reviewer.md` | Leaf review agents |
-| `.cursor/roles/coordinator.md` | Mid-tier coordinators |
+| `.agentception/roles/cto.md` | CTO agent |
+| `.agentception/roles/engineering-manager.md` | Engineering Manager |
+| `.agentception/roles/qa-manager.md` | QA Manager |
+| `.agentception/roles/python-developer.md` | Leaf implementation agents (Python/API work) |
+| `.agentception/roles/muse-specialist.md` | Leaf agents on Muse VCS / musical analysis work |
+| `.agentception/roles/database-architect.md` | Leaf agents on migrations / seed data |
+| `.agentception/roles/pr-reviewer.md` | Leaf review agents |
+| `.agentception/roles/coordinator.md` | Mid-tier coordinators |
 
 ### Conflict Prevention (structural — set and forget)
 
 | File | What it does |
 |------|-------------|
 | `.gitattributes` | Union merge driver for additive files (`app.py`, docs) — git auto-resolves |
-| `.cursor/CONFLICT_RULES.md` | Mechanical lookup table: one-line rule per conflict type |
+| `.agentception/conflict-rules.md` | Mechanical lookup table: one-line rule per conflict type |
 | `maestro/api/routes/musehub/__init__.py` | Auto-discovers all routers — agents never touch this file |
 
 ### Agent State (per-task)
@@ -104,7 +104,7 @@ PR=485                    # PR number (for pr-review)
 BRANCH=feat/issue-423     # git branch name
 WORKTREE=/Users/gabriel/.cursor/worktrees/maestro/issue-423
 ROLE=python-developer     # which cognitive architecture to load
-ROLE_FILE=/Users/gabriel/dev/tellurstori/maestro/.cursor/roles/python-developer.md
+ROLE_FILE=/Users/gabriel/dev/tellurstori/maestro/.agentception/roles/python-developer.md
 BASE=dev
 GH_REPO=cgcardona/maestro
 CLOSES_ISSUES=423         # comma-separated issue numbers to close on merge
@@ -196,11 +196,11 @@ Open two Cursor composer windows or call the Task tool twice simultaneously:
 
 **QA Manager prompt:**
 ```
-You are the QA Manager. Read /Users/gabriel/dev/tellurstori/maestro/.cursor/roles/qa-manager.md.
+You are the QA Manager. Read /Users/gabriel/dev/tellurstori/maestro/.agentception/roles/qa-manager.md.
 
 Launch one leaf agent per PR using the Task tool. Each agent gets:
 "Read .agent-task at <WORKTREE>/.agent-task, then follow the Kickoff Prompt in
-/Users/gabriel/dev/tellurstori/maestro/.cursor/PARALLEL_PR_REVIEW.md.
+/Users/gabriel/dev/tellurstori/maestro/.agentception/prompts/parallel-pr-review.md.
 Your worktree is <WORKTREE>. GH_REPO=cgcardona/maestro"
 
 Your PRs: [list worktrees]
@@ -208,11 +208,11 @@ Your PRs: [list worktrees]
 
 **Engineering Manager prompt:**
 ```
-You are the Engineering Manager. Read /Users/gabriel/dev/tellurstori/maestro/.cursor/roles/engineering-manager.md.
+You are the Engineering Manager. Read /Users/gabriel/dev/tellurstori/maestro/.agentception/roles/engineering-manager.md.
 
 Launch one leaf agent per issue using the Task tool. Each agent gets:
 "Read .agent-task at <WORKTREE>/.agent-task, then follow the Kickoff Prompt in
-/Users/gabriel/dev/tellurstori/maestro/.cursor/PARALLEL_ISSUE_TO_PR.md.
+/Users/gabriel/dev/tellurstori/maestro/.agentception/prompts/parallel-issue-to-pr.md.
 Your worktree is <WORKTREE>. GH_REPO=cgcardona/maestro"
 
 Your issues: [list worktrees]
@@ -224,7 +224,7 @@ Serialized (MERGE_AFTER): [note any dependency ordering]
 Use this when you want the pipeline to run end-to-end without manual intervention:
 
 ```
-You are the CTO. Read /Users/gabriel/dev/tellurstori/maestro/.cursor/roles/cto.md.
+You are the CTO. Read /Users/gabriel/dev/tellurstori/maestro/.agentception/roles/cto.md.
 
 Survey the pipeline state with gh issue list and gh pr list.
 Dispatch the Engineering Manager and QA Manager simultaneously using the Task tool.
@@ -272,7 +272,7 @@ This is the ONLY thing you pass to a leaf agent. Do not add anything.
 ```
 Read the `.agent-task` file at `<WORKTREE>/.agent-task` to get your full assignment,
 then follow the complete Kickoff Prompt section in
-`/Users/gabriel/dev/tellurstori/maestro/.cursor/PARALLEL_ISSUE_TO_PR.md`.
+`/Users/gabriel/dev/tellurstori/maestro/.agentception/prompts/parallel-issue-to-pr.md`.
 
 Your worktree is `<WORKTREE>`. Work only in that directory.
 Repo root: /Users/gabriel/dev/tellurstori/maestro
@@ -283,7 +283,7 @@ GH_REPO=cgcardona/maestro
 ```
 Read the `.agent-task` file at `<WORKTREE>/.agent-task` to get your full assignment,
 then follow the complete Kickoff Prompt section in
-`/Users/gabriel/dev/tellurstori/maestro/.cursor/PARALLEL_PR_REVIEW.md`.
+`/Users/gabriel/dev/tellurstori/maestro/.agentception/prompts/parallel-pr-review.md`.
 
 Your worktree is `<WORKTREE>`. Work only in that directory.
 Repo root: /Users/gabriel/dev/tellurstori/maestro

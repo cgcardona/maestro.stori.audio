@@ -236,7 +236,7 @@ async def controls_hub(request: Request) -> HTMLResponse:
     from agentception.config import settings as _cfg
     from agentception.db.queries import get_agent_run_history
 
-    sentinel = _Path(_cfg.repo_dir) / ".cursor" / ".pipeline-pause"
+    sentinel = _cfg.ac_dir / ".pipeline-pause"
     paused: bool = sentinel.exists()
 
     state = get_state() or PipelineState.empty()

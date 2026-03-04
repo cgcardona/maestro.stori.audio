@@ -16,9 +16,9 @@ entire chain to drain.
 ```
 SEED:
   0. Pipeline-pause sentinel — check BEFORE seeding any agents:
-       # The AgentCeption dashboard writes .cursor/.pipeline-pause to request a pause.
+       # The AgentCeption dashboard writes .agentception/.pipeline-pause to request a pause.
        # When the file exists, wait 30 s and restart the SEED block without spawning.
-       [ -f /Users/gabriel/dev/tellurstori/maestro/.cursor/.pipeline-pause ] && \
+       [ -f /Users/gabriel/dev/tellurstori/maestro/.agentception/.pipeline-pause ] && \
          echo "⏸ Pipeline paused by AgentCeption dashboard." && sleep 30 && continue
 
   1. Ensure the claim label exists with canonical color (idempotent):
@@ -257,7 +257,7 @@ ISSUE_LABEL=<primary ac-ui/* label from: gh issue view <N> --json labels --jq '[
 BRANCH=feat/issue-<N>
 WORKTREE=$HOME/.cursor/worktrees/maestro/issue-<N>
 ROLE=python-developer
-ROLE_FILE=$HOME/dev/tellurstori/maestro/.cursor/roles/python-developer.md
+ROLE_FILE=$HOME/dev/tellurstori/maestro/.agentception/roles/python-developer.md
 BASE=dev
 GH_REPO=cgcardona/maestro
 CLOSES_ISSUES=<N>
@@ -585,7 +585,7 @@ for entry in "${SELECTED_ISSUES[@]}"; do
     FIGURE="hopper"
   fi
   COGNITIVE_ARCH_VAL="${FIGURE}:${SKILLS}"
-  ROLE_FILE_VAL="$REPO/.cursor/roles/${AGENT_ROLE}.md"
+  ROLE_FILE_VAL="$REPO/.agentception/roles/${AGENT_ROLE}.md"
 
   cat > "$WT/.agent-task" << TASKEOF
 WORKFLOW=issue-to-pr
@@ -721,7 +721,7 @@ the `dev` branch with uncommitted changes.
 
 ### Command policy
 
-Consult `.cursor/agent-command-policy.md` for the full tier list. Summary:
+Consult `.agentception/agent-command-policy.md` for the full tier list. Summary:
 - **Green (auto-allow):** `ls`, `git status/log/diff/fetch`, `gh pr view`, `mypy`, `pytest`, `rg`
 - **Yellow (review before running):** `docker compose build`, `rm <single file>`, `git rebase`
 - **Red (never):** `rm -rf`, `git push --force`, `git push origin dev`, `docker system prune`
@@ -733,7 +733,7 @@ Consult `.cursor/agent-command-policy.md` for the full tier list. Summary:
 ```
 PARALLEL AGENT COORDINATION — ISSUE TO PR
 
-Read .cursor/agent-command-policy.md before issuing any shell commands.
+Read .agentception/agent-command-policy.md before issuing any shell commands.
 Green-tier commands run without confirmation. Yellow = check scope first.
 Red = never, ask the user instead.
 
@@ -1128,7 +1128,7 @@ Maestro-Session: $AGENT_SESSION"
   git fetch origin
   git merge origin/dev
 
-  ⚡ CONFLICT SHORTCUT: open .cursor/conflict-rules.md FIRST.
+  ⚡ CONFLICT SHORTCUT: open .agentception/conflict-rules.md FIRST.
   Every common conflict has a one-line rule. NO sed/grep/hexdump loops.
   maestro/api/routes/musehub/__init__.py NEVER conflicts (auto-discovery).
   app.py, muse-vcs.md, type-contracts.md use union merge (.gitattributes).
@@ -1403,7 +1403,7 @@ FILES_CHANGED=$PR_FILES_VAL
 MERGE_AFTER=none
 HAS_MIGRATION=$HAS_MIG_VAL
 ROLE=pr-reviewer
-ROLE_FILE=$HOME/dev/tellurstori/maestro/.cursor/roles/pr-reviewer.md
+ROLE_FILE=$HOME/dev/tellurstori/maestro/.agentception/roles/pr-reviewer.md
 COGNITIVE_ARCH=${REVIEWER_ARCH}
 BATCH_ID=${BATCH_ID:-none}
 WAVE=${WAVE:-unset}
@@ -2132,7 +2132,7 @@ FILES_CHANGED=$PR_FILES
 MERGE_AFTER=$MERGE_AFTER_VAL
 HAS_MIGRATION=$HAS_MIGRATION_VAL
 ROLE=$REVIEW_ROLE
-ROLE_FILE=$HOME/dev/tellurstori/maestro/.cursor/roles/${REVIEW_ROLE}.md
+ROLE_FILE=$HOME/dev/tellurstori/maestro/.agentception/roles/${REVIEW_ROLE}.md
 COGNITIVE_ARCH=$R_COGNITIVE_ARCH
 BATCH_ID=$R_BATCH_ID
 VP_FINGERPRINT=$VP_FINGERPRINT
@@ -2250,7 +2250,7 @@ the `dev` branch with uncommitted changes that don't belong there.
 
 ### Command policy
 
-Consult `.cursor/agent-command-policy.md` for the full tier list. Summary:
+Consult `.agentception/agent-command-policy.md` for the full tier list. Summary:
 - **Green (auto-allow):** `ls`, `git status/log/diff/fetch`, `gh pr view`, `mypy`, `pytest`, `rg`
 - **Yellow (review before running):** `docker compose build`, `rm <single file>`, `git rebase`
 - **Red (never):** `rm -rf`, `git push --force`, `git push origin dev`, `docker system prune`
@@ -2262,7 +2262,7 @@ Consult `.cursor/agent-command-policy.md` for the full tier list. Summary:
 ```
 PARALLEL AGENT COORDINATION — PR REVIEW
 
-Read .cursor/agent-command-policy.md before issuing any shell commands.
+Read .agentception/agent-command-policy.md before issuing any shell commands.
 Green-tier commands run without confirmation. Yellow = check scope first.
 Red = never, ask the user instead.
 
@@ -2433,7 +2433,7 @@ STEP 3 — CHECKOUT & SYNC (only if STEP 2 shows the PR is open and unreviewed):
   #    docs/architecture/muse-vcs.md    Keep ALL ## sections from both sides, sort alpha.
   #    docs/reference/type-contracts.md Keep ALL entries from both sides.
   #
-  #    ⚡ SHORTCUT: open .cursor/conflict-rules.md — every common conflict in this
+  #    ⚡ SHORTCUT: open .agentception/conflict-rules.md — every common conflict in this
   #    repo has a one-line mechanical rule. Do NOT use sed/grep/hexdump loops.
   #    maestro/api/routes/musehub/__init__.py NEVER conflicts (auto-discovery).
   #    app.py, muse-vcs.md, type-contracts.md use union merge via .gitattributes.
@@ -2606,7 +2606,7 @@ STEP 4 — TARGETED TEST SCOPING (before review):
   #         INCORRECT: docker compose exec maestro pytest agentception/... (wrong container/deps)
   #         INCORRECT: python3 -m pytest ... (host — missing deps)
   #
-  # 4. If the PR only changes .cursor/, docs/, or other non-.py files: skip pytest entirely.
+  # 4. If the PR only changes .agentception/, .cursor/, docs/, or other non-.py files: skip pytest entirely.
   #    mypy is irrelevant too. The review is markdown-content focused.
   #
   # ⚠️  NEVER run the full test suite. Only the derived test files for this PR's codebase.
@@ -3204,7 +3204,7 @@ WORKTREE=$NEXT_WORKTREE
 BASE=dev
 CLOSES_ISSUES=$NEXT_ISSUE
 ROLE=python-developer
-ROLE_FILE=$HOME/dev/tellurstori/maestro/.cursor/roles/python-developer.md
+ROLE_FILE=$HOME/dev/tellurstori/maestro/.agentception/roles/python-developer.md
 BATCH_ID=${BATCH_ID:-none}
 VP_FINGERPRINT=${VP_FINGERPRINT:-unset}
 WAVE=${WAVE:-unset}
@@ -3271,7 +3271,7 @@ FILES_CHANGED=$NEXT_FILES
 MERGE_AFTER=$NEXT_MERGE_AFTER
 HAS_MIGRATION=$NEXT_HAS_MIG_VAL
 ROLE=pr-reviewer
-ROLE_FILE=$HOME/dev/tellurstori/maestro/.cursor/roles/pr-reviewer.md
+ROLE_FILE=$HOME/dev/tellurstori/maestro/.agentception/roles/pr-reviewer.md
 COGNITIVE_ARCH=${COGNITIVE_ARCH:-knuth:python}
 BATCH_ID=${BATCH_ID:-none}
 VP_FINGERPRINT=${VP_FINGERPRINT:-unset}

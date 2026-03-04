@@ -247,7 +247,7 @@ class ProjectConfig(BaseModel):
 
 
 class PipelineConfig(BaseModel):
-    """Validated shape of ``.cursor/pipeline-config.json``.
+    """Validated shape of ``.agentception/pipeline-config.json``.
 
     This is the single source of truth for pipeline allocation.  The CTO and
     Engineering VP role files read this model at the start of every loop/seed

@@ -172,7 +172,7 @@ coordinator uses to fill in `.agent-task` files and determine label names.
 ```bash
 # ── Phase Planner script ──────────────────────────────────────────────────────
 REPO=$(git rev-parse --show-toplevel)
-PLAN_FILE="$REPO/.cursor/phase-plan-$(date +%Y%m%d%H%M%S).json"
+PLAN_FILE="$REPO/.agentception/phase-plan-$(date +%Y%m%d%H%M%S).json"
 
 echo "🗺️  Phase Planner: analyzing bug report..."
 echo "   Output → $PLAN_FILE"
@@ -430,7 +430,7 @@ STEP 0 — READ YOUR TASK FILE:
 STEP 0.5 — LOAD YOUR ROLE:
   ROLE=$(grep '^ROLE=' .agent-task | cut -d= -f2)
   REPO=$(git worktree list | head -1 | awk '{print $1}')
-  ROLE_FILE="$REPO/.cursor/roles/${ROLE}.md"
+  ROLE_FILE="$REPO/.agentception/roles/${ROLE}.md"
   [ -f "$ROLE_FILE" ] && cat "$ROLE_FILE" && echo "✅ Operating as: $ROLE"
 
   Export for all subsequent commands:

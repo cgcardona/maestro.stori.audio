@@ -388,18 +388,18 @@ _DISPATCHER_PROMPT_PATH = Path(settings.repo_dir) / ".cursor" / "agentception-di
 async def get_dispatcher_prompt() -> dict[str, object]:
     """Return the Dispatcher prompt markdown so the UI can offer a one-click copy.
 
-    The prompt lives at ``.cursor/agentception-dispatcher.md`` in the repo.
+    The prompt lives at ``.agentception/dispatcher.md`` in the repo.
     Returns ``{"content": "<markdown>", "path": "<rel path>"}`` or a 404 if
     the file is missing.
     """
-    path = Path(settings.repo_dir) / ".cursor" / "agentception-dispatcher.md"
+    path = settings.ac_dir / "dispatcher.md"
     if not path.exists():
         raise HTTPException(
             status_code=404,
-            detail="Dispatcher prompt not found at .cursor/agentception-dispatcher.md",
+            detail="Dispatcher prompt not found at .agentception/dispatcher.md",
         )
     content = path.read_text(encoding="utf-8")
-    return {"content": content, "path": ".cursor/agentception-dispatcher.md"}
+    return {"content": content, "path": ".agentception/dispatcher.md"}
 
 
 # ---------------------------------------------------------------------------

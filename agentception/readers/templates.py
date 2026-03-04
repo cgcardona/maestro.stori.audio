@@ -1,22 +1,23 @@
 """Template export and import logic for AC-602.
 
 A *template* is a versioned ``.tar.gz`` archive of the pipeline configuration
-files that live under ``.cursor/`` in a Maestro repo.  Exporting packages the
-current repo's managed files; importing extracts them into any target repo's
-``.cursor/`` directory.
+files that live under ``.agentception/`` in a Maestro repo.  Exporting
+packages the current repo's managed files; importing extracts them into any
+target repo's ``.agentception/`` directory.
 
 Managed files that are always included when they exist:
 
-- ``.cursor/roles/*.md``
-- ``.cursor/PARALLEL_*.md``
-- ``.cursor/pipeline-config.json``
-- ``.cursor/agent-command-policy.md`` (case-insensitive search)
+- ``.agentception/roles/*.md``
+- ``.agentception/prompts/*.md``
+- ``.agentception/pipeline-config.json``
+- ``.agentception/agent-command-policy.md``
+- ``.agentception/dispatcher.md``
 
 The archive also contains a ``template-manifest.json`` at the top level that
 records provenance (name, version, created_at, gh_repo, file list).
 
-Exported archives are stored under ``~/.cursor/agentception-templates/`` so
-they persist across service restarts and are accessible from the UI.
+Exported archives are stored under ``~/.agentception/templates/`` so they
+persist across service restarts and are accessible from the UI.
 """
 from __future__ import annotations
 
@@ -38,7 +39,7 @@ from agentception.models import (
 logger = logging.getLogger(__name__)
 
 #: Directory where exported templates are stored persistently.
-TEMPLATES_STORE: Path = Path.home() / ".cursor" / "agentception-templates"
+TEMPLATES_STORE: Path = Path.home() / ".agentception" / "templates"
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -51,28 +52,34 @@ def _gather_managed_files(repo_dir: Path) -> list[Path]:
     Files are relative to *repo_dir* — callers use them both as archive member
     names and as on-disk paths by joining with *repo_dir*.
     """
-    cursor_dir = repo_dir / ".cursor"
+    ac_dir = repo_dir / ".agentception"
     candidates: list[Path] = []
 
     # Role files
-    roles_dir = cursor_dir / "roles"
+    roles_dir = ac_dir / "roles"
     if roles_dir.is_dir():
         candidates.extend(sorted(roles_dir.glob("*.md")))
 
-    # PARALLEL_*.md at .cursor root
-    candidates.extend(sorted(cursor_dir.glob("PARALLEL_*.md")))
+    # Prompt templates
+    prompts_dir = ac_dir / "prompts"
+    if prompts_dir.is_dir():
+        candidates.extend(sorted(prompts_dir.glob("*.md")))
 
     # pipeline-config.json
-    pc = cursor_dir / "pipeline-config.json"
+    pc = ac_dir / "pipeline-config.json"
     if pc.exists():
         candidates.append(pc)
 
-    # agent-command-policy.md (case-insensitive; try both known casings)
-    for name in ("agent-command-policy.md", "AGENT_COMMAND_POLICY.md"):
-        p = cursor_dir / name
+    # Top-level markdown files (dispatcher, policy, task spec, etc.)
+    for name in (
+        "dispatcher.md",
+        "agent-command-policy.md",
+        "agent-task-spec.md",
+        "conflict-rules.md",
+    ):
+        p = ac_dir / name
         if p.exists():
             candidates.append(p)
-            break
 
     return [p for p in candidates if p.is_file()]
 

@@ -16,7 +16,7 @@ from agentception.config import settings
 
 # Path to the sentinel file that pauses the agent pipeline.
 # Writing this file tells CTO and Eng VP loops to wait rather than spawn agents.
-_SENTINEL: Path = settings.repo_dir / ".cursor" / ".pipeline-pause"
+_SENTINEL: Path = settings.ac_dir / ".pipeline-pause"
 
 
 def _resolve_cognitive_arch(issue_body: str, role: str) -> str:

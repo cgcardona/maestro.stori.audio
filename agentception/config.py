@@ -76,6 +76,16 @@ class AgentCeptionSettings(BaseSettings):
     """
     repo_dir: Path = Path.cwd()
     gh_repo: str = "cgcardona/maestro"
+
+    @property
+    def ac_dir(self) -> Path:
+        """Canonical path to the ``.agentception/`` directory at the repo root.
+
+        All AgentCeption-owned config files (roles, prompts, pipeline-config,
+        dispatcher prompt, etc.) live here — not in ``.cursor/``, which belongs
+        to the IDE.
+        """
+        return self.repo_dir / ".agentception"
     poll_interval_seconds: int = 5
     github_cache_seconds: int = 10
     database_url: str | None = None
@@ -102,7 +112,7 @@ class AgentCeptionSettings(BaseSettings):
         paths immediately.  If the file is absent, malformed, or has no
         ``active_project`` key, the validator is a no-op.
         """
-        config_path = self.repo_dir / ".cursor" / "pipeline-config.json"
+        config_path = self.repo_dir / ".agentception" / "pipeline-config.json"
         if not config_path.exists():
             return self
         try:
@@ -126,7 +136,7 @@ class AgentCeptionSettings(BaseSettings):
         enough that wrapping it in an executor would add more overhead than
         it saves.
         """
-        config_path = self.repo_dir / ".cursor" / "pipeline-config.json"
+        config_path = self.repo_dir / ".agentception" / "pipeline-config.json"
         if not config_path.exists():
             return
         try:

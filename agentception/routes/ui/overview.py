@@ -60,7 +60,7 @@ async def overview(request: Request) -> HTMLResponse:
         logger.warning("⚠️ Could not read pipeline config: %s", exc)
 
     try:
-        _cfg_path = _settings.repo_dir / ".cursor" / "pipeline-config.json"
+        _cfg_path = _settings.ac_dir / "pipeline-config.json"
         if _cfg_path.exists():
             _raw_cfg: object = _json.loads(_cfg_path.read_text(encoding="utf-8"))
             if isinstance(_raw_cfg, dict):
@@ -79,7 +79,7 @@ async def overview(request: Request) -> HTMLResponse:
     scaling_advice: ScalingRecommendation | None = None
     pr_violations: list[PRViolation] = []
     from pathlib import Path as _Path
-    poller_paused: bool = (_Path(_settings.repo_dir) / ".cursor" / ".pipeline-pause").exists()
+    poller_paused: bool = (_settings.ac_dir / ".pipeline-pause").exists()
 
     try:
         waves = await aggregate_waves()

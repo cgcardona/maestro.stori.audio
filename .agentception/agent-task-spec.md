@@ -563,7 +563,7 @@ once all coordinator prompts are updated to write TOML.
 ### Adding a new domain (non-tech org)
 
 1. Add an entry to `org-presets.yaml` with the domain's role topology.
-2. Add role files to `.cursor/roles/` for any new roles.
+2. Add role files to `.agentception/roles/` for any new roles.
 3. Add cognitive architecture figures/skills to `scripts/gen_prompts/cognitive_archetypes/`
    if the domain has domain-specific figures (e.g., `ogilvy.yaml` for marketing).
 4. Set `domain.name` and `domain.org_preset` in the task file.
