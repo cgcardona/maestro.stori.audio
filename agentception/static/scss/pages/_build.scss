@@ -152,6 +152,10 @@
   padding: 0.5rem 0.875rem;
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+  user-select: none;
+
+  &:hover { background: var(--bg-overlay); }
 }
 
 .build-phase__icon {
@@ -194,16 +198,16 @@
 }
 
 .build-phase__chevron {
-  font-size: 1rem;
+  font-size: 1.1rem;
   color: var(--text-faint);
   line-height: 1;
   margin-left: auto;
-  transition: transform 0.2s var(--ease-out);
   display: inline-block;
-  transform: rotate(0deg); // › pointing right = collapsed
+  transition: transform 0.18s ease;
+  transform: rotate(0deg); // › = right = collapsed
 
   &--open {
-    transform: rotate(90deg); // › rotated 90° = pointing down = expanded
+    transform: rotate(90deg); // › rotated 90° = ˅ = expanded
   }
 }
 
@@ -214,6 +218,14 @@
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
+  max-height: 420px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-default) transparent;
+
+  &::-webkit-scrollbar       { width: 4px; }
+  &::-webkit-scrollbar-track { background: transparent; }
+  &::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
 }
 
 .build-phase__empty {
