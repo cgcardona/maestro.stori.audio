@@ -107,6 +107,7 @@ async def dispatch_agent(req: DispatchRequest) -> DispatchResponse:
         "git", "worktree", "add", worktree_path, "-b", branch,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        cwd=str(settings.repo_dir),
     )
     stdout, stderr = await proc.communicate()
 
@@ -154,6 +155,7 @@ async def dispatch_agent(req: DispatchRequest) -> DispatchResponse:
             "git", "worktree", "remove", "--force", worktree_path,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            cwd=str(settings.repo_dir),
         )
         await cleanup.communicate()
         logger.error("❌ dispatch: .agent-task write failed, worktree cleaned up — %s", exc)
@@ -290,6 +292,7 @@ async def dispatch_label_agent(req: LabelDispatchRequest) -> LabelDispatchRespon
         "git", "worktree", "add", worktree_path, "-b", branch,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        cwd=str(settings.repo_dir),
     )
     stdout, stderr = await proc.communicate()
     if proc.returncode != 0:
@@ -343,6 +346,7 @@ async def dispatch_label_agent(req: LabelDispatchRequest) -> LabelDispatchRespon
             "git", "worktree", "remove", "--force", worktree_path,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            cwd=str(settings.repo_dir),
         )
         await cleanup.communicate()
         logger.error("❌ dispatch-label: .agent-task write failed — %s", exc)
