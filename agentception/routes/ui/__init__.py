@@ -36,13 +36,13 @@ from .worktrees import router as _worktrees
 from ._shared import _find_agent, _TEMPLATES  # noqa: F401
 
 router = APIRouter(tags=["ui"])
+router.include_router(_plan_ui)   # owns "/" — must be first
 router.include_router(_overview)
 router.include_router(_agents)
 router.include_router(_telemetry)
 router.include_router(_dag)
 router.include_router(_config)
 router.include_router(_ab)
-router.include_router(_plan_ui)
 router.include_router(_roles_ui)
 router.include_router(_org_chart)
 router.include_router(_github)

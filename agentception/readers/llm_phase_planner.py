@@ -1,160 +1,226 @@
-"""LLM-powered phase planner — converts a brain dump into a PlanResult via Claude.
+"""LLM-powered plan generator -- converts a brain dump into a PlanSpec YAML via Claude.
 
-This is the production replacement for the keyword-based heuristic in
-``phase_planner.py``.  It calls Claude Sonnet via OpenRouter and asks it to
-group the user's free-form ideas into sequenced phases.
+Two public entry points:
 
-The output schema is identical to the heuristic planner so the route and UI
-require no changes.  When ``AC_OPENROUTER_API_KEY`` is absent the route falls
-back to the heuristic — this module is never called in that case.
+``generate_plan_yaml(dump)``
+    Step 1.A: calls Claude, returns a validated PlanSpec YAML string ready for
+    the Monaco editor.  This is the production path when AC_OPENROUTER_API_KEY
+    is set.
+
+``plan_phases_llm(dump)``
+    Legacy JSON phase-card path (kept for heuristic fallback in plan_ui.py).
+    Returns a PlanResult with PhasePreview objects.
+
+Architecture note
+-----------------
+MCP is NOT involved in this module.  The browser -> AgentCeption -> OpenRouter
+loop is entirely self-contained.  MCP enters only after the user approves the
+YAML and a coordinator worktree is spawned -- the coordinator agent (in Cursor)
+calls ``plan_get_labels()`` and similar tools as it files GitHub issues.
 """
 from __future__ import annotations
 
 import json
 import logging
 
-from agentception.models import PhasePreview, PlanResult
+import yaml as _yaml
+
+from agentception.models import PhasePreview, PlanResult, PlanSpec
 from agentception.services.llm import call_openrouter
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM_PROMPT = """\
-## Identity
+# ---------------------------------------------------------------------------
+# Shared cognitive architecture injected into both prompts
+# ---------------------------------------------------------------------------
 
-You are a Staff-level Technical Program Manager with the mental model of a \
-dependency-graph theorist. You think the way Dijkstra thought about shortest \
-paths: everything is a node, every hard dependency is a directed edge, and your \
-only job is to find the critical path and eliminate it as fast as possible. You \
-are ruthlessly pragmatic — you ship, you sequence, you parallelize.
+_IDENTITY = (
+    "## Identity\n\n"
+    "You are a Staff-level Technical Program Manager with the mental model of a "
+    "dependency-graph theorist. You think the way Dijkstra thought about shortest "
+    "paths: everything is a node, every hard dependency is a directed edge, and "
+    "your only job is to find the critical path and eliminate it as fast as "
+    "possible. You are ruthlessly pragmatic -- you ship, you sequence, you "
+    "parallelize.\n\n"
+    "Your single obsession: **What is the minimum number of phases needed to "
+    "deliver this work safely, in the right order, with maximum parallelism "
+    "within each phase?**\n\n"
+    "You do not gold-plate plans. You do not invent work. You do not pad phases. "
+    "You extract signal from the user's brain dump and impose order on it.\n\n"
+    "## The four phases -- strict definitions\n\n"
+    "**phase-0 -- Foundations & Critical Fixes**: Work everything else depends on.\n"
+    "**phase-1 -- Infrastructure & Core Services**: Internal plumbing features need.\n"
+    "**phase-2 -- Features & User-Facing Work**: New capabilities visible to users.\n"
+    "**phase-3 -- Polish, Tests & Debt**: Tests, docs, refactors, cleanup.\n\n"
+    "Only emit phases that have work. Skip empty phases entirely.\n"
+)
 
-Your single obsession: **What is the minimum number of phases needed to deliver \
-this work safely, in the right order, with maximum parallelism within each phase?**
+# ---------------------------------------------------------------------------
+# Prompt A -- JSON phase cards (used by plan_phases_llm / heuristic fallback)
+# ---------------------------------------------------------------------------
 
-You do not gold-plate plans. You do not invent work. You do not pad phases. You \
-extract signal from the user's brain dump and impose order on it.
+_SYSTEM_PROMPT = (
+    _IDENTITY
+    + "\n## Output format: JSON phase cards\n\n"
+    "Return ONLY valid JSON -- no explanation, no markdown fences, no preamble:\n\n"
+    '{\n  "phases": [\n    {\n      "label": "phase-0",\n'
+    '      "description": "One sentence: theme for the confirmation card.",\n'
+    '      "estimated_issue_count": 2,\n      "depends_on": []\n    }\n  ]\n}\n\n'
+    "phase labels: ONLY phase-0, phase-1, phase-2, phase-3. No others.\n"
+    "depends_on: list of phase labels that must complete before this one.\n"
+    "estimated_issue_count: distinct GitHub issues, not bullet points.\n"
+    "description: one concise sentence for the human confirmation card.\n"
+)
 
-## Context you must internalize
+# ---------------------------------------------------------------------------
+# Prompt B -- Full PlanSpec YAML (Step 1.A production output)
+# ---------------------------------------------------------------------------
 
-You are producing a **phase plan preview** that will be shown to the user before \
-they confirm. Upon confirmation, an AI coordinator agent will be dispatched. That \
-coordinator will read your phase plan and expand each phase into fully-specified \
-GitHub issues — with titles, detailed bodies, acceptance criteria, labels, and \
-cross-issue depends_on chains. You are NOT writing the issues. You are drawing \
-the map the coordinator will follow.
+_YAML_SYSTEM_PROMPT = (
+    _IDENTITY
+    + "\n## Output format: PlanSpec YAML -- STRICT\n\n"
+    "You are producing the COMPLETE plan specification. The coordinator will "
+    "create GitHub issues verbatim from this YAML -- write every title and body "
+    "as if you are writing the actual GitHub issue.\n\n"
+    "Return ONLY valid YAML -- no explanation, no markdown fences (no ```), no "
+    "preamble. The response must be parseable by yaml.safe_load() as-is.\n\n"
+    "Schema (follow exactly):\n\n"
+    "initiative: short-kebab-slug-inferred-from-the-work\n"
+    "phases:\n"
+    "  - label: phase-0\n"
+    "    description: \"One sentence: theme and gate criterion.\"\n"
+    "    depends_on: []\n"
+    "    issues:\n"
+    "      - title: \"Imperative-mood GitHub issue title (Fix X / Add Y / Migrate Z)\"\n"
+    "        body: |\n"
+    "          2-4 sentences. What is the problem or goal. What specifically to\n"
+    "          implement. What done looks like (acceptance criteria in plain English).\n"
+    "        depends_on: []\n"
+    "  - label: phase-1\n"
+    "    description: \"...\"\n"
+    "    depends_on: [phase-0]\n"
+    "    issues:\n"
+    "      - title: \"...\"\n"
+    "        body: |\n"
+    "          ...\n"
+    "        depends_on: []\n\n"
+    "## Field rules\n\n"
+    "initiative\n"
+    "  Short kebab-case slug from the dominant theme (e.g. auth-rewrite).\n\n"
+    "label\n"
+    "  ONLY: phase-0, phase-1, phase-2, phase-3. No others.\n\n"
+    "depends_on (phase level)\n"
+    "  Phase labels this phase waits for. Use linear order unless phases are\n"
+    "  genuinely independent.\n\n"
+    "title\n"
+    "  Imperative mood. Specific. Standalone GitHub issue title.\n"
+    '  Good: "Fix intermittent 503 on mobile login".\n\n'
+    "body\n"
+    "  2-4 sentences to the implementing engineer. Sentence 1: context.\n"
+    "  Sentences 2-3: what to implement. Final sentence: done criteria.\n\n"
+    "depends_on (issue level)\n"
+    "  Exact issue TITLES that this issue waits for. Use sparingly.\n\n"
+    "## Anti-patterns -- never do these\n\n"
+    "- Do NOT emit an empty phase.\n"
+    "- Do NOT invent tasks the user did not mention.\n"
+    "- Do NOT use more than 4 phases or create custom phase labels.\n"
+    "- Do NOT add markdown fences around the YAML output.\n"
+    '- Do NOT write vague bodies ("Implement feature X" with no specifics).\n'
+    "- Do NOT exceed 4096 tokens -- be concise in bodies (2-4 sentences).\n"
+    "\n## CRITICAL: always output YAML -- no exceptions\n\n"
+    "You MUST output valid YAML regardless of how vague or short the input is.\n"
+    "You MUST NOT ask for clarification. You MUST NOT output prose.\n"
+    "If the input is too vague to extract real tasks, produce a minimal plan:\n"
+    "  - initiative: clarify-and-scope\n"
+    "  - phase-0 with one issue: 'Define project scope and requirements'\n"
+    "    body: Describe what the user provided and what needs to be clarified.\n"
+    "Even a single-phase, single-issue YAML is a valid output. Never refuse.\n"
+)
 
-This means:
-- Your phase descriptions will appear verbatim on a confirmation card the human \
-  reads. Write for a human who wants to confirm intent, not for a machine.
-- Your estimated_issue_count is the coordinator's workload estimate per phase. \
-  Be accurate — one GitHub issue per discrete unit of work (not per bullet point, \
-  not one giant issue per phase).
-- Your depends_on wiring gates the entire downstream pipeline. If you get the \
-  dependency graph wrong, agents will block each other or ship in the wrong order.
 
-## The four phases — strict definitions
-
-You MUST use only these labels. No others. No custom labels. No sub-phases.
-
-**phase-0 — Foundations & Critical Fixes**
-Work that everything else depends on. This phase answers: "What would cause \
-phase-1 to be blocked or to produce wrong results if we skipped it?" Include:
-- Critical bugs that would corrupt data or block core flows
-- Security vulnerabilities that must be patched before new code ships
-- Schema migrations, DB changes, or API contracts that later work will call
-- Foundational data models or interfaces that multiple features will import
-Gate criterion: nothing in phase-1 can be correctly implemented without this.
-
-**phase-1 — Infrastructure & Core Services**
-The load-bearing internals that features will stand on. This phase answers: \
-"What internal plumbing must exist before user-facing work can begin?" Include:
-- New API endpoints, routes, or service layers features will call
-- Auth, sessions, permissions logic that features gate behind
-- Data pipelines or background jobs features depend on
-- Refactors that would cause merge conflicts if done during feature work
-Gate criterion: all phase-2 feature work can start once this merges.
-
-**phase-2 — Features & User-Facing Work**
-New capabilities visible to users. This phase answers: "What does the user \
-actually get?" Include:
-- New UI screens, components, or flows
-- New product behaviors (enable X, expose Y, add Z)
-- Integrations that add capability (notifications, exports, search)
-Gate criterion: user-visible deliverables are code-complete and testable.
-
-**phase-3 — Polish, Tests & Debt**
-Everything that makes the codebase better without adding new capability. Include:
-- Test coverage additions and integration tests
-- Documentation and docstring passes
-- Refactors that improve maintainability but change no behavior
-- Performance optimization, linting, type-safety improvements
-- Removal of deprecated code or dead endpoints
-Gate criterion: codebase is clean, covered, and ready for the next initiative.
-
-## Dependency rules
-
-- depends_on uses the linear order: phase-1 depends on phase-0, phase-2 depends \
-  on phase-1, etc. You do NOT need to list transitive dependencies (if phase-2 \
-  depends on phase-1, which depends on phase-0, phase-2 only lists ["phase-1"]).
-- If a phase has no predecessor (first emitted phase), its depends_on is [].
-- If items in phase-2 are completely independent of phase-1 (rare), they may \
-  omit phase-1 from depends_on — but default to the linear chain unless you have \
-  a specific reason not to.
-
-## Anti-patterns — never do these
-
-- Do NOT emit an empty phase (no items → no phase).
-- Do NOT create a phase-0 just because it exists — only if there is genuine \
-  gating work.
-- Do NOT split one logical task across two phases to fill them.
-- Do NOT lump everything into a single phase to avoid making a decision.
-- Do NOT invent tasks the user did not mention.
-- Do NOT write issue-level detail in description — that is the coordinator's job.
-- Do NOT exceed 4 phases — if you think you need 5, you are under-grouping.
-
-## estimated_issue_count guidance
-
-Think: how many distinct pull requests would a careful engineer open for this \
-phase? Each PR = one issue. A multi-step migration is usually 2–3 issues. A \
-single UI component is usually 1. A "refactor X module" is usually 1–2. A \
-"write tests for Y" is 1. Be honest — the coordinator will be assigned this \
-workload.
-
-## Output format — STRICT
-
-Return ONLY valid JSON. No explanation. No markdown fences. No preamble. \
-No trailing commentary. The response must be parseable by json.loads() as-is.
-
-{
-  "phases": [
-    {
-      "label": "phase-0",
-      "description": "One sentence: the theme of this phase for the human confirmation card.",
-      "estimated_issue_count": 2,
-      "depends_on": []
-    },
-    {
-      "label": "phase-1",
-      "description": "One sentence: what gets built in this phase.",
-      "estimated_issue_count": 4,
-      "depends_on": ["phase-0"]
-    }
-  ]
-}
-"""
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _strip_fences(raw: str) -> str:
-    """Remove markdown code fences if the model wraps its JSON in them."""
+    """Remove markdown code fences if the model wraps its output in them."""
     raw = raw.strip()
     if raw.startswith("```"):
-        # Drop the opening fence line and the closing ``` (if present).
         lines = raw.splitlines()
-        # First line is ```json or ``` — skip it.
         inner = "\n".join(lines[1:])
         if inner.rstrip().endswith("```"):
             inner = inner.rstrip()[:-3].rstrip()
         return inner.strip()
     return raw
+
+
+# ---------------------------------------------------------------------------
+# Public entry points
+# ---------------------------------------------------------------------------
+
+
+async def generate_plan_yaml(dump: str, label_prefix: str = "") -> str:
+    """Step 1.A -- convert a brain dump into a validated PlanSpec YAML string.
+
+    Calls Claude Sonnet via OpenRouter with the full PlanSpec YAML prompt.
+    Validates the returned YAML against :class:`~agentception.models.PlanSpec`
+    so the Monaco editor always shows a structurally correct document.
+
+    If ``label_prefix`` is provided it overrides the ``initiative`` field
+    Claude inferred from the text.
+
+    Args:
+        dump: Raw plan text from the user.
+        label_prefix: Optional initiative slug override (from the UI options field).
+
+    Returns:
+        A YAML string that validates against ``PlanSpec``.
+
+    Raises:
+        ValueError: Empty dump, invalid YAML from LLM, or schema mismatch.
+        RuntimeError: Missing AC_OPENROUTER_API_KEY.
+        httpx.HTTPStatusError: Non-2xx from OpenRouter.
+    """
+    dump = dump.strip()
+    if not dump:
+        raise ValueError("Plan text must not be empty.")
+
+    raw = await call_openrouter(
+        dump,
+        system_prompt=_YAML_SYSTEM_PROMPT,
+        temperature=0.2,
+        max_tokens=4096,
+    )
+    raw = _strip_fences(raw)
+
+    try:
+        data: object = _yaml.safe_load(raw)
+    except _yaml.YAMLError as exc:
+        logger.error("LLM returned invalid YAML: %s\nRaw (first 500): %s", exc, raw[:500])
+        raise ValueError(f"LLM returned invalid YAML: {exc}") from exc
+
+    if not isinstance(data, dict):
+        raise ValueError(f"LLM YAML top level is {type(data).__name__}, expected mapping.")
+
+    if label_prefix:
+        data["initiative"] = label_prefix
+
+    try:
+        spec = PlanSpec.model_validate(data)
+    except Exception as exc:
+        logger.error("LLM YAML failed PlanSpec validation: %s", exc)
+        raise ValueError(f"LLM output does not match PlanSpec schema: {exc}") from exc
+
+    issue_count = sum(len(p.issues) for p in spec.phases)
+    validated_yaml: str = spec.to_yaml()
+    logger.info(
+        "✅ PlanSpec YAML generated: initiative=%s phases=%d issues=%d",
+        spec.initiative,
+        len(spec.phases),
+        issue_count,
+    )
+    return validated_yaml
 
 
 async def plan_phases_llm(dump: str) -> PlanResult:
@@ -183,7 +249,7 @@ async def plan_phases_llm(dump: str) -> PlanResult:
     try:
         data: object = json.loads(raw)
     except json.JSONDecodeError as exc:
-        logger.error("❌ LLM returned invalid JSON: %s\nRaw: %s", exc, raw[:500])
+        logger.error("LLM returned invalid JSON: %s\nRaw: %s", exc, raw[:500])
         raise ValueError(f"LLM returned invalid JSON: {exc}") from exc
 
     if not isinstance(data, dict):
@@ -196,7 +262,7 @@ async def plan_phases_llm(dump: str) -> PlanResult:
     phases: list[PhasePreview] = []
     for item in raw_phases:
         if not isinstance(item, dict):
-            logger.warning("⚠️ Skipping non-dict phase entry: %r", item)
+            logger.warning("Skipping non-dict phase entry: %r", item)
             continue
         try:
             phases.append(
@@ -208,10 +274,10 @@ async def plan_phases_llm(dump: str) -> PlanResult:
                 )
             )
         except (KeyError, TypeError, ValueError) as exc:
-            logger.warning("⚠️ Skipping malformed phase entry %r: %s", item, exc)
+            logger.warning("Skipping malformed phase entry %r: %s", item, exc)
 
     if not phases:
-        raise ValueError("LLM returned no valid phases — check the prompt or input.")
+        raise ValueError("LLM returned no valid phases -- check the prompt or input.")
 
     logger.info("✅ LLM phase plan: %d phases for %d-char dump", len(phases), len(dump))
     return PlanResult(phases=phases)
