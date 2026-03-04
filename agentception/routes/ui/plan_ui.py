@@ -97,10 +97,10 @@ _PLAN_SEEDS = [
 _PLAN_LOADING_MSGS: list[str] = [
     "Amplifying your intelligence…",
     "Untangling the dependency graph…",
-    "Thinking in phases…",
+    "Sequencing your work…",
     "The singularity is here…",
     "Parallelising your chaos…",
-    "Reasoning about what blocks what…",
+    "Finding the critical path…",
     "Turning noise into signal…",
     "Your engineers will thank you…",
     "One prompt to rule them all…",
