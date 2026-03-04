@@ -14,8 +14,11 @@
   <!-- HTMX 2.x — server-driven hypermedia -->
   <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
 
-  <!-- Alpine.js component library — must load before Alpine initialises -->
-  <script src="/static/app.js" defer></script>
+  <!-- Alpine.js component library — must load before Alpine initialises.
+       type="module" is required because app.js uses ES import statements.
+       Module scripts are deferred by default and execute in document order,
+       so this runs before the Alpine CDN tag below. -->
+  <script src="/static/app.js" type="module"></script>
 
   <!-- Alpine.js 3.x — lightweight reactivity (loads after app.js) -->
   <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js" defer></script>
