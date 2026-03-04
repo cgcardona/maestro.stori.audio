@@ -94,19 +94,6 @@ _PLAN_SEEDS = [
     },
 ]
 
-_PLAN_LOADING_MSGS: list[str] = [
-    "Amplifying your intelligence…",
-    "Untangling the dependency graph…",
-    "Sequencing your work…",
-    "The singularity is here…",
-    "Parallelising your chaos…",
-    "Finding the critical path…",
-    "Turning noise into signal…",
-    "Your engineers will thank you…",
-    "One prompt to rule them all…",
-    "Infinite leverage, loading…",
-]
-
 
 def _normalize_plan_dict(raw: object) -> object:
     """Coerce alternative YAML shapes into the canonical PlanSpec mapping.
@@ -533,7 +520,6 @@ async def plan_page(request: Request) -> HTMLResponse:
             "gh_repo": _cfg.gh_repo,
             "funnel_stages": _PLAN_FUNNEL_STAGES,
             "seeds": _PLAN_SEEDS,
-            "loading_msgs": _PLAN_LOADING_MSGS,
         },
     )
 
