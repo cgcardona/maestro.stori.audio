@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/overview", response_class=HTMLResponse)
 async def overview(request: Request) -> HTMLResponse:
     """Dashboard overview — live agent hierarchy tree and GitHub board sidebar.
 

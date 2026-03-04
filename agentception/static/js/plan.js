@@ -1,26 +1,46 @@
 'use strict';
 
 /**
- * Powers the Plan form — text input → phase preview → create issues → done.
+ * Powers the Plan page — Write → Review (CodeMirror 6 YAML) → Done.
  *
- * State machine steps:
- *   input      — user types their plan and clicks "Plan my issues"
- *   previewing — phase cards are shown; user confirms or goes back to edit
- *   loading    — POST /api/control/spawn-coordinator in flight
- *   done       — coordinator queued successfully
+ * State machine:
+ *   write      — textarea, user composes their plan
+ *   generating — waiting for POST /api/plan/preview (LLM call, ~5-15s)
+ *   review     — CodeMirror 6 YAML editor, editable, validate-on-change
+ *   launching  — waiting for POST /api/plan/launch
+ *   done       — coordinator spawned, success summary
  *
- * Static data (loading messages) is read from data attributes on the root
- * element so they live in Python/Jinja, not in this file.
- * Seeds are rendered server-side by Jinja; each button passes its text via
- * $el.dataset.text so no seed array is needed here.
+ * Architecture note
+ * -----------------
+ * This component talks to two endpoints:
  *
- * HTMX refreshes the recent-runs sidebar after a successful submit:
- *   htmx.trigger('#bd-recent-runs', 'refresh')
+ *   POST /api/plan/preview  { dump, label_prefix }
+ *     → { yaml, initiative, phase_count, issue_count }
+ *     Claude (via AgentCeption → OpenRouter) returns a PlanSpec YAML.
+ *     No MCP, no Cursor, no worktrees involved here.
+ *
+ *   POST /api/plan/launch   { yaml_text }
+ *     → { batch_id, branch, worktree }
+ *     AgentCeption validates the YAML, writes a coordinator .agent-task, and
+ *     creates a worktree.  The coordinator agent running in Cursor then calls
+ *     plan_get_labels() and similar MCP tools as it files GitHub issues.
+ *
+ * CodeMirror 6 is bundled by esbuild — no CDN, no Web Workers, no AMD loader.
+ * This avoids the cross-origin worker crashes that affect Monaco CDN usage.
  */
+
+import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
+import { EditorState } from '@codemirror/state';
+import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { yaml } from '@codemirror/lang-yaml';
+import { oneDark } from '@codemirror/theme-one-dark';
+
+const VALIDATE_DEBOUNCE_MS = 600;
+
 export function planForm() {
   return {
-    step: 'input',
-    funnelStage: 0,
+    // ── State ──────────────────────────────────────────────────────────────
+    step: 'write',        // write | generating | review | launching | done
     text: '',
     labelPrefix: '',
     showOptions: false,
@@ -28,34 +48,66 @@ export function planForm() {
     submitting: false,
     errorMsg: '',
     result: {},
-    loadingMsg: '',
-    _loadingMsgs: [],
+
+    // ── Review metadata (from /api/plan/preview response) ──────────────────
+    initiative: '',
+    phaseCount: 0,
+    issueCount: 0,
+
+    // ── YAML validation ────────────────────────────────────────────────────
+    yamlValid: true,
+    yamlValidationMsg: '',
+    _validateTimer: null,
+
+    // ── Streaming output ───────────────────────────────────────────────────
+    thinkingText: '',   // chain-of-thought reasoning (dim display)
+    streamingText: '',  // output YAML tokens (bright display)
+
+    // Internal write buffers — flushed to Alpine state once per animation frame
+    // so we don't trigger hundreds of reactive updates per second.
+    _thinkBuf: '',
+    _streamBuf: '',
+    _thinkFlush: null,
+    _streamFlush: null,
+
+    // ── Loading message rotation ───────────────────────────────────────────
+    loadingMsg: 'Amplifying your intelligence…',
+    _loadingMsgs: [
+      'Amplifying your intelligence…',
+      'Untangling the dependency graph…',
+      'Thinking in phases…',
+      'The singularity is here…',
+      'Parallelising your chaos…',
+      'Reasoning about what blocks what…',
+      'Turning noise into signal…',
+      'Your engineers will thank you…',
+      'One prompt to rule them all…',
+      'Infinite leverage, loading…',
+    ],
     _loadingTimer: null,
 
-    // Phase preview state (populated after POST /api/plan/preview)
-    phases: [],
-    planError: '',
+    // ── CodeMirror 6 editor ────────────────────────────────────────────────
+    _editor: null,         // EditorView instance (created once, kept alive)
+
+    // ── Lifecycle ──────────────────────────────────────────────────────────
 
     init() {
-      // Loading messages are defined in Python, injected via data attribute.
-      this._loadingMsgs = JSON.parse(this.$el.dataset.loadingMsgs || '[]');
-      this.loadingMsg = this._loadingMsgs[0] ?? '';
+      this._rotateMsgs();
     },
 
-    get lineCount() {
-      return this.text.split('\n').filter(l => l.trim()).length;
+    _rotateMsgs() {
+      let i = 0;
+      this._loadingTimer = setInterval(() => {
+        i = (i + 1) % this._loadingMsgs.length;
+        this.loadingMsg = this._loadingMsgs[i] ?? '';
+      }, 4000);
     },
 
-    stageClass(n) {
-      if (this.funnelStage > n) return 'bd-funnel-stage--done';
-      if (this.funnelStage === n && this.step !== 'input') return 'bd-funnel-stage--active bd-funnel-stage--pulse';
-      if (n === 0 && this.step === 'input') return 'bd-funnel-stage--active';
-      return '';
-    },
+    // ── Textarea helpers ───────────────────────────────────────────────────
 
     autoGrow(el) {
       el.style.height = 'auto';
-      el.style.height = Math.min(el.scrollHeight, 600) + 'px';
+      el.style.height = Math.min(el.scrollHeight, 520) + 'px';
     },
 
     async pasteClipboard() {
@@ -64,136 +116,177 @@ export function planForm() {
         this.text = (this.text ? this.text + '\n' : '') + t;
         await this.$nextTick();
         this.autoGrow(this.$refs.textarea);
-      } catch (_) {}
+      } catch (_) {
+        // Clipboard permission denied — silent fail (user can paste manually).
+      }
     },
 
-    // Called from Jinja-rendered seed buttons: @click="appendSeed($el.dataset.text)"
     appendSeed(txt) {
       this.text = (this.text.trim() ? this.text.trim() + '\n' : '') + txt;
       this.$nextTick(() => this.autoGrow(this.$refs.textarea));
     },
 
-    _startLoadingAnimation() {
-      let i = 0;
-      this.funnelStage = 1;
-      this.loadingMsg = this._loadingMsgs[0] ?? '';
-      this._loadingTimer = setInterval(() => {
-        i = (i + 1) % this._loadingMsgs.length;
-        this.loadingMsg = this._loadingMsgs[i] ?? '';
-        this.funnelStage = Math.min(i + 1, 5);
-      }, 700);
+    cancel() {
+      this.step = 'write';
+      this.submitting = false;
+      this.errorMsg = '';
     },
 
-    _stopLoadingAnimation(finalStage) {
-      if (this._loadingTimer) { clearInterval(this._loadingTimer); this._loadingTimer = null; }
-      this.funnelStage = finalStage;
-    },
+    // ── Step 1.A: POST /api/plan/preview — get PlanSpec YAML from LLM ─────
 
-    /**
-     * Step 1: call the Phase Planner and show a phase card preview.
-     * Fires when the user clicks "Plan my issues →".
-     */
     async submit() {
       const trimmed = this.text.trim();
       if (!trimmed) return;
-      this.submitting = true;
       this.errorMsg = '';
-      this.planError = '';
-      this.funnelStage = 1;
+      this.streamingText = '';
+      this.thinkingText = '';
+      this.step = 'generating';
+      this.submitting = true;
       try {
         const resp = await fetch('/api/plan/preview', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dump: trimmed }),
+          body: JSON.stringify({ dump: trimmed, label_prefix: this.labelPrefix.trim() }),
         });
         if (!resp.ok) {
-          const body = await resp.json().catch(() => ({}));
-          throw new Error(body.detail || `HTTP ${resp.status}`);
+          const errBody = await resp.json().catch(() => ({}));
+          throw new Error(errBody.detail || `HTTP ${resp.status}`);
         }
-        const data = await resp.json();
-        this.phases = data.phases || [];
-        this.step = 'previewing';
-        this.funnelStage = 2;
+
+        // Read the SSE stream.  The server emits three event types:
+        //   {"t":"chunk","text":"..."}  — raw token(s), append to display
+        //   {"t":"done", "yaml":"...", "initiative":"...", ...}  — complete
+        //   {"t":"error","detail":"..."}  — something went wrong
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let doneData = null;
+
+        outer: while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          // SSE lines are separated by \n\n; split on \n and process complete lines.
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? ''; // hold the (possibly incomplete) last chunk
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const raw = line.slice(6).trim();
+            if (!raw) continue;
+            let msg;
+            try { msg = JSON.parse(raw); } catch { continue; }
+
+            if (msg.t === 'thinking') {
+              this._appendThink(msg.text);
+
+            } else if (msg.t === 'chunk') {
+              this._appendStream(msg.text);
+
+            } else if (msg.t === 'done') {
+              doneData = msg;
+              break outer;
+
+            } else if (msg.t === 'error') {
+              throw new Error(msg.detail || 'Plan generation failed.');
+            }
+          }
+        }
+
+        if (!doneData) throw new Error('Stream ended without a done event.');
+
+        this.initiative = doneData.initiative || 'plan';
+        this.phaseCount  = doneData.phase_count  ?? 0;
+        this.issueCount  = doneData.issue_count  ?? 0;
+
+        // Flush any remaining buffered stream text before changing step,
+        // so the buffers are empty when the generating div disappears.
+        this._flushThink();
+        this._flushStream();
+
+        // Flip to review. One nextTick lets Alpine process the x-show change.
+        this.step = 'review';
+        await this.$nextTick();
+
+        // Mount (or reuse) the CodeMirror editor and load the YAML.
+        this._mountEditor(doneData.yaml || '');
+
+        this.yamlValid = true;
+        this.yamlValidationMsg = `✓ Valid — ${this.phaseCount} phases, ${this.issueCount} issues`;
       } catch (err) {
         this.errorMsg = err.message;
-        this.funnelStage = 0;
+        this.step = 'write';
       } finally {
         this.submitting = false;
       }
     },
 
-    /**
-     * Step 2: user confirmed the plan — fire the coordinator.
-     * Called from the "Looks good — Create Issues" button.
-     */
-    async confirmAndCreate() {
-      const trimmed = this.text.trim();
-      if (!trimmed) return;
-      this.submitting = true;
-      this.errorMsg = '';
-      this.step = 'loading';
-      this._startLoadingAnimation();
-      try {
-        const resp = await fetch('/api/control/spawn-coordinator', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ plan_text: trimmed, label_prefix: this.labelPrefix.trim() }),
-        });
-        if (!resp.ok) {
-          const body = await resp.json().catch(() => ({}));
-          throw new Error(body.detail || `HTTP ${resp.status}`);
-        }
-        this.result = await resp.json();
-        this._stopLoadingAnimation(5);
-        this.step = 'done';
-        // Refresh the recent-runs sidebar via HTMX so the new run appears.
-        const sidebar = document.getElementById('bd-recent-runs');
-        if (sidebar && typeof htmx !== 'undefined') htmx.trigger(sidebar, 'refresh');
-      } catch (err) {
-        this._stopLoadingAnimation(2);
-        this.errorMsg = err.message;
-        this.step = 'previewing';
-      } finally {
-        this.submitting = false;
-      }
-    },
+    // ── Step 1.B: go back to textarea, keep text intact ───────────────────
 
-    /**
-     * Go back from the preview step to input, keeping the textarea content.
-     */
     editPlan() {
-      this.step = 'input';
-      this.funnelStage = 0;
-      this.phases = [];
-      this.planError = '';
+      this.step = 'write';
       this.errorMsg = '';
       this.$nextTick(() => {
         if (this.$refs.textarea) this.autoGrow(this.$refs.textarea);
       });
     },
 
+    // ── Step 1.B: POST /api/plan/launch — submit (possibly edited) YAML ───
+
+    async launch() {
+      const yaml = this._getEditorValue();
+      if (!yaml.trim()) return;
+      if (!this.yamlValid) {
+        this.errorMsg = 'Fix the YAML errors before launching.';
+        return;
+      }
+      this.errorMsg = '';
+      this.step = 'launching';
+      this.submitting = true;
+      try {
+        const resp = await fetch('/api/plan/launch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ yaml_text: yaml }),
+        });
+        if (!resp.ok) {
+          const body = await resp.json().catch(() => ({}));
+          throw new Error(body.detail || `HTTP ${resp.status}`);
+        }
+        this.result = await resp.json();
+        this.step = 'done';
+      } catch (err) {
+        this.errorMsg = err.message;
+        this.step = 'review';
+      } finally {
+        this.submitting = false;
+      }
+    },
+
+    // ── Reset: start a new plan ────────────────────────────────────────────
+
     reset() {
-      this._stopLoadingAnimation(0);
-      this.step = 'input';
-      this.funnelStage = 0;
+      this.step = 'write';
       this.text = '';
       this.labelPrefix = '';
       this.showOptions = false;
       this.errorMsg = '';
-      this.planError = '';
-      this.phases = [];
+      this.streamingText = '';
+      this.thinkingText = '';
+      this._thinkBuf = '';
+      this._streamBuf = '';
+      this.initiative = '';
+      this.phaseCount = 0;
+      this.issueCount = 0;
+      this.yamlValid = true;
+      this.yamlValidationMsg = '';
       this.result = {};
+      if (this._editor) this._setEditorValue('');
     },
 
-    /**
-     * Load a previous run's plan text into the editor and switch to input step.
-     *
-     * Called from the "Re-run →" button rendered in _plan_recent_runs.html:
-     *   @click='reRun({{ run.slug | tojson }})'
-     *
-     * Fetches GET /api/plan/{runId}/plan-text, populates the textarea,
-     * then resets to the input step so the user can review and resubmit.
-     */
+    // ── Re-run from a previous run ─────────────────────────────────────────
+
     async reRun(runId) {
       try {
         const resp = await fetch(`/api/plan/${encodeURIComponent(runId)}/plan-text`);
@@ -209,6 +302,126 @@ export function planForm() {
         if (this.$refs.textarea) this.autoGrow(this.$refs.textarea);
       } catch (err) {
         this.errorMsg = err.message || 'Failed to load previous run.';
+      }
+    },
+
+    // ── Stream buffering helpers ───────────────────────────────────────────
+    // Alpine reactive updates are expensive — batch them to one per animation
+    // frame instead of firing once per token (~50-300 times/second).
+
+    _appendThink(text) {
+      this._thinkBuf += text;
+      if (!this._thinkFlush) {
+        this._thinkFlush = requestAnimationFrame(() => this._flushThink());
+      }
+    },
+
+    _flushThink() {
+      if (this._thinkBuf) {
+        this.thinkingText += this._thinkBuf;
+        this._thinkBuf = '';
+        const el = this.$refs.thinkDisplay;
+        if (el) el.scrollTop = el.scrollHeight;
+      }
+      this._thinkFlush = null;
+    },
+
+    _appendStream(text) {
+      this._streamBuf += text;
+      if (!this._streamFlush) {
+        this._streamFlush = requestAnimationFrame(() => this._flushStream());
+      }
+    },
+
+    _flushStream() {
+      if (this._streamBuf) {
+        this.streamingText += this._streamBuf;
+        this._streamBuf = '';
+        const el = this.$refs.streamDisplay;
+        if (el) el.scrollTop = el.scrollHeight;
+      }
+      this._streamFlush = null;
+    },
+
+    // ── CodeMirror 6 editor ────────────────────────────────────────────────
+    // Bundled by esbuild — no CDN, no Web Workers, no AMD loader.
+    // _mountEditor() creates the view on first call and reuses it on
+    // subsequent calls (_setEditorValue flushes new content in place).
+
+    _mountEditor(content) {
+      const container = this.$refs.yamlEditor;
+      if (!container) return;
+
+      if (this._editor) {
+        // Editor already mounted — just update content and scroll to top.
+        this._setEditorValue(content);
+        return;
+      }
+
+      const self = this;
+      const updateListener = EditorView.updateListener.of(update => {
+        if (update.docChanged) {
+          clearTimeout(self._validateTimer);
+          self._validateTimer = setTimeout(() => self._validateYaml(), VALIDATE_DEBOUNCE_MS);
+        }
+      });
+
+      this._editor = new EditorView({
+        state: EditorState.create({
+          doc: content,
+          extensions: [
+            history(),
+            lineNumbers(),
+            highlightActiveLine(),
+            keymap.of([...defaultKeymap, ...historyKeymap]),
+            yaml(),
+            oneDark,
+            EditorView.lineWrapping,
+            updateListener,
+          ],
+        }),
+        parent: container,
+      });
+    },
+
+    _getEditorValue() {
+      if (!this._editor) return '';
+      return this._editor.state.doc.toString();
+    },
+
+    _setEditorValue(content) {
+      if (!this._editor) return;
+      this._editor.dispatch({
+        changes: { from: 0, to: this._editor.state.doc.length, insert: content },
+        selection: { anchor: 0 },
+        scrollIntoView: true,
+      });
+    },
+
+    async _validateYaml() {
+      if (this.step !== 'review') return;
+      const yaml = this._getEditorValue();
+      if (!yaml.trim()) {
+        this.yamlValid = false;
+        this.yamlValidationMsg = '⚠ YAML is empty.';
+        return;
+      }
+      try {
+        const resp = await fetch('/api/plan/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ yaml_text: yaml }),
+        });
+        const data = await resp.json();
+        if (data.valid) {
+          this.yamlValid = true;
+          this.yamlValidationMsg = `✓ Valid — ${data.phase_count} phases, ${data.issue_count} issues`;
+        } else {
+          this.yamlValid = false;
+          this.yamlValidationMsg = `✗ ${data.detail || 'Invalid PlanSpec'}`;
+        }
+      } catch (_) {
+        this.yamlValidationMsg = '';
       }
     },
   };

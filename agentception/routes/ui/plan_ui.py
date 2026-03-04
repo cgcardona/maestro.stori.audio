@@ -1,23 +1,41 @@
-"""UI routes: Plan page, recent-runs partial, and plan preview endpoint.
+"""UI routes: Plan page and its API endpoints.
 
 Endpoints
 ---------
-POST /api/plan/preview                   — phase preview (no GitHub resources created)
+POST /api/plan/preview                   — Step 1.A: brain dump → PlanSpec YAML (SSE stream)
+POST /api/plan/validate                  — Validate (possibly edited) YAML against PlanSpec
 GET  /plan                               — full page
 GET  /plan/recent-runs                   — HTMX partial (sidebar refresh)
 GET  /api/plan/{run_id}/plan-text        — return original plan text for re-run
+
+Streaming protocol (POST /api/plan/preview)
+-------------------------------------------
+The endpoint returns ``text/event-stream`` (SSE).  Each event is a JSON object
+on a ``data:`` line followed by ``\\n\\n``.  Event shapes::
+
+    {"t": "chunk", "text": "<raw token(s)>"}   -- one or more output tokens
+    {"t": "done",  "yaml": "<full yaml>",
+                   "initiative": "...",
+                   "phase_count": N, "issue_count": N}  -- stream complete
+    {"t": "error", "detail": "<message>"}       -- stream failed
+
+The browser accumulates ``chunk`` texts, shows them live, then on ``done``
+loads the canonical validated YAML into the Monaco editor.
 """
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from pydantic import BaseModel
 from starlette.requests import Request
 
-from agentception.models import PlanRequest, PlanResult
 from agentception.readers.phase_planner import plan_phases
-from agentception.readers.llm_phase_planner import plan_phases_llm
+from agentception.readers.llm_phase_planner import _strip_fences  # type: ignore[attr-defined]
+from agentception.services.llm import call_openrouter_stream
 from ._shared import _TEMPLATES
 
 logger = logging.getLogger(__name__)
@@ -77,11 +95,16 @@ _PLAN_SEEDS = [
 ]
 
 _PLAN_LOADING_MSGS: list[str] = [
-    "Analyzing your plan…",
-    "Planning phases…",
-    "Setting up labels…",
-    "Preparing issues…",
-    "Dispatching coordinator…",
+    "Amplifying your intelligence…",
+    "Untangling the dependency graph…",
+    "Thinking in phases…",
+    "The singularity is here…",
+    "Parallelising your chaos…",
+    "Reasoning about what blocks what…",
+    "Turning noise into signal…",
+    "Your engineers will thank you…",
+    "One prompt to rule them all…",
+    "Infinite leverage, loading…",
 ]
 
 
@@ -163,47 +186,204 @@ async def _build_recent_plans() -> list[dict[str, str]]:
     return recent_plans
 
 
-@router.post("/api/plan/preview", response_model=PlanResult)
-async def plan_preview(body: PlanRequest) -> PlanResult:
-    """Convert free-form plan text into sequenced phase cards.
+class PlanDraftRequest(BaseModel):
+    """Request body for ``POST /api/plan/preview`` (Step 1.A).
 
-    Tries the LLM path first (Claude via OpenRouter) when
-    ``AC_OPENROUTER_API_KEY`` is configured.  Falls back to the keyword
-    heuristic when the key is absent or the LLM call fails, so the page
-    always works even without a key.
+    ``dump`` is the raw plan text.  ``label_prefix`` is an optional initiative
+    slug override — when supplied it replaces the ``initiative`` field Claude
+    would have inferred from the text.
+    """
 
-    Raises
-    ------
-    HTTP 422
-        When ``dump`` is empty or contains no extractable work items.
+    dump: str
+    label_prefix: str = ""
+
+
+class PlanDraftYamlResponse(BaseModel):
+    """Response from ``POST /api/plan/preview`` (Step 1.A).
+
+    ``yaml`` is a valid PlanSpec YAML string ready to be loaded into the
+    Monaco editor.  ``initiative`` is extracted for the UI to display.
+    ``phase_count`` and ``issue_count`` are convenience totals.
+    """
+
+    yaml: str
+    initiative: str
+    phase_count: int
+    issue_count: int
+
+
+def _sse(obj: dict[str, object]) -> str:
+    """Format a dict as a single SSE data line."""
+    return f"data: {json.dumps(obj)}\n\n"
+
+
+@router.post("/api/plan/preview")
+async def plan_preview(body: PlanDraftRequest) -> StreamingResponse:
+    """Step 1.A -- convert free-form text into a PlanSpec YAML via SSE stream.
+
+    Returns ``text/event-stream``.  Each event is a JSON object on a ``data:``
+    line.  See module docstring for the full event shape reference.
+
+    When ``AC_OPENROUTER_API_KEY`` is set the LLM path streams tokens in real
+    time so the browser can show progress.  When the key is absent the heuristic
+    fallback emits a single ``done`` event immediately.
     """
     from agentception.config import settings as _cfg
+    from agentception.models import PlanSpec
+    from agentception.readers.llm_phase_planner import _YAML_SYSTEM_PROMPT  # type: ignore[attr-defined]
 
-    if _cfg.openrouter_api_key:
+    dump = body.dump.strip()
+    if not dump:
+        raise HTTPException(status_code=422, detail="Plan text must not be empty.")
+
+    async def _llm_stream() -> AsyncGenerator[str, None]:
+        """Stream LLM tokens then emit a validated ``done`` event.
+
+        Yields three SSE event types to the browser:
+          {"t": "thinking", "text": "..."}  -- chain-of-thought reasoning
+          {"t": "chunk",    "text": "..."}  -- output YAML token
+          {"t": "done",     "yaml": "...", ...}  -- validated, complete
+          {"t": "error",    "detail": "..."}  -- something went wrong
+        """
+        accumulated = ""
         try:
-            result = await plan_phases_llm(body.dump)
+            async for llm_chunk in call_openrouter_stream(
+                dump,
+                system_prompt=_YAML_SYSTEM_PROMPT,
+                temperature=0.2,
+                max_tokens=4096,
+            ):
+                if llm_chunk["type"] == "thinking":
+                    yield _sse({"t": "thinking", "text": llm_chunk["text"]})
+                else:
+                    # "content" chunks are the YAML output
+                    accumulated += llm_chunk["text"]
+                    yield _sse({"t": "chunk", "text": llm_chunk["text"]})
+
+            # Validate and canonicalise the full output.
+            yaml_str = _strip_fences(accumulated)
+
+            # Detect prose response: yaml.safe_load returns a str (not a dict)
+            # when the model outputs conversational text instead of YAML.
+            import yaml as _yaml_mod
+            parsed: object = _yaml_mod.safe_load(yaml_str) if yaml_str.strip() else None
+            if not isinstance(parsed, dict):
+                logger.warning(
+                    "⚠️ LLM returned prose instead of YAML (first 200 chars): %s",
+                    accumulated[:200],
+                )
+                yield _sse({
+                    "t": "error",
+                    "detail": (
+                        "Your input was too short or vague for the model to plan. "
+                        "Add more detail — describe actual bugs, features, or tech debt you want tackled."
+                    ),
+                })
+                return
+
+            spec = PlanSpec.from_yaml(yaml_str)
+            canonical = spec.to_yaml()
+            total = sum(len(p.issues) for p in spec.phases)
             logger.info(
-                "✅ Phase plan (LLM): %d phases for %d chars",
-                len(result.phases), len(body.dump),
+                "✅ Plan stream done: initiative=%s phases=%d issues=%d",
+                spec.initiative, len(spec.phases), total,
             )
-            return result
+            yield _sse({
+                "t": "done",
+                "yaml": canonical,
+                "initiative": spec.initiative,
+                "phase_count": len(spec.phases),
+                "issue_count": total,
+            })
         except Exception as exc:
-            logger.warning(
-                "⚠️ LLM phase planner failed — falling back to heuristic: %s", exc
-            )
+            logger.error("❌ Plan stream error: %s | accumulated (200): %s", exc, accumulated[:200])
+            yield _sse({"t": "error", "detail": str(exc)})
 
-    # Heuristic fallback — always available, no network required.
+    async def _heuristic_stream() -> AsyncGenerator[str, None]:
+        """Emit a single ``done`` event from the keyword heuristic (no LLM)."""
+        try:
+            result = plan_phases(dump)
+        except ValueError as exc:
+            yield _sse({"t": "error", "detail": str(exc)})
+            return
+
+        initiative = body.label_prefix or "plan"
+        phase_lines = [f"initiative: {initiative}", "phases:"]
+        prev_labels: list[str] = []
+        total = 0
+        for ph in result.phases:
+            phase_lines.append(f"  - label: {ph.label}")
+            phase_lines.append(f'    description: "{ph.description}"')
+            deps = "[" + ", ".join(prev_labels) + "]" if prev_labels else "[]"
+            phase_lines.append(f"    depends_on: {deps}")
+            phase_lines.append("    issues:")
+            phase_lines.append(f'      - title: "{ph.description}"')
+            phase_lines.append(f'        body: "Implement: {ph.description}"')
+            phase_lines.append("        depends_on: []")
+            prev_labels.append(ph.label)
+            total += 1
+
+        yaml_str = "\n".join(phase_lines) + "\n"
+        yield _sse({
+            "t": "done",
+            "yaml": yaml_str,
+            "initiative": initiative,
+            "phase_count": len(result.phases),
+            "issue_count": total,
+        })
+
+    generator = _llm_stream() if _cfg.openrouter_api_key else _heuristic_stream()
+    return StreamingResponse(generator, media_type="text/event-stream")
+
+
+class PlanValidateRequest(BaseModel):
+    """Request body for ``POST /api/plan/validate`` (client-side debounce)."""
+
+    yaml_text: str
+
+
+class PlanValidateResponse(BaseModel):
+    """Validation result from ``POST /api/plan/validate``."""
+
+    valid: bool
+    initiative: str = ""
+    phase_count: int = 0
+    issue_count: int = 0
+    detail: str = ""
+
+
+@router.post("/api/plan/validate", response_model=PlanValidateResponse)
+async def plan_validate(body: PlanValidateRequest) -> PlanValidateResponse:
+    """Validate a (possibly edited) PlanSpec YAML against the schema.
+
+    Called by the Monaco editor's ``onDidChangeModelContent`` handler
+    (debounced at 600 ms) so the user sees immediate feedback while editing.
+
+    Returns HTTP 200 with ``valid: false`` and a ``detail`` message on schema
+    errors — does NOT return 4xx, so the JS handler stays simple.
+    """
+    from agentception.models import PlanSpec
+
+    text = body.yaml_text.strip()
+    if not text:
+        return PlanValidateResponse(valid=False, detail="YAML is empty.")
+
     try:
-        result = plan_phases(body.dump)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    logger.info(
-        "✅ Phase plan (heuristic): %d phases for %d chars",
-        len(result.phases), len(body.dump),
+        spec = PlanSpec.from_yaml(text)
+    except Exception as exc:
+        short = str(exc)[:200]
+        return PlanValidateResponse(valid=False, detail=short)
+
+    total = sum(len(p.issues) for p in spec.phases)
+    return PlanValidateResponse(
+        valid=True,
+        initiative=spec.initiative,
+        phase_count=len(spec.phases),
+        issue_count=total,
     )
-    return result
 
 
+@router.get("/", response_class=HTMLResponse)
 @router.get("/plan", response_class=HTMLResponse)
 async def plan_page(request: Request) -> HTMLResponse:
     """Plan — convert free-form text into phased GitHub issues."""
