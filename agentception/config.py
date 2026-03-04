@@ -79,6 +79,13 @@ class AgentCeptionSettings(BaseSettings):
     poll_interval_seconds: int = 5
     github_cache_seconds: int = 10
     database_url: str | None = None
+    openrouter_api_key: str = ""
+    """OpenRouter API key for direct LLM calls (plan phase preview, enrichment).
+
+    Set via ``AC_OPENROUTER_API_KEY`` env var.  When absent the Phase Planner
+    falls back to the keyword-based heuristic classifier — no LLM is required
+    for the service to start.
+    """
     """Async database URL for AgentCeption's own ac_* tables.
 
     Set via ``AC_DATABASE_URL`` env var (docker-compose injects this).

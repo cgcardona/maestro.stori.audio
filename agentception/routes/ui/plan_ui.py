@@ -17,6 +17,7 @@ from starlette.requests import Request
 
 from agentception.models import PlanRequest, PlanResult
 from agentception.readers.phase_planner import plan_phases
+from agentception.readers.llm_phase_planner import plan_phases_llm
 from ._shared import _TEMPLATES
 
 logger = logging.getLogger(__name__)
@@ -164,23 +165,42 @@ async def _build_recent_plans() -> list[dict[str, str]]:
 
 @router.post("/api/plan/preview", response_model=PlanResult)
 async def plan_preview(body: PlanRequest) -> PlanResult:
-    """Run the Phase Planner against a plan without creating any GitHub resources.
+    """Convert free-form plan text into sequenced phase cards.
 
-    This is Step -1 of the coordinator workflow — it analyses the raw plan text,
-    groups work items into sequenced phases, and returns a ``PlanResult`` that the
-    UI shows as a confirmation card deck.  The user can then press "Create Issues"
-    to fire the full coordinator, or go back to edit their plan.
+    Tries the LLM path first (Claude via OpenRouter) when
+    ``AC_OPENROUTER_API_KEY`` is configured.  Falls back to the keyword
+    heuristic when the key is absent or the LLM call fails, so the page
+    always works even without a key.
 
     Raises
     ------
     HTTP 422
         When ``dump`` is empty or contains no extractable work items.
     """
+    from agentception.config import settings as _cfg
+
+    if _cfg.openrouter_api_key:
+        try:
+            result = await plan_phases_llm(body.dump)
+            logger.info(
+                "✅ Phase plan (LLM): %d phases for %d chars",
+                len(result.phases), len(body.dump),
+            )
+            return result
+        except Exception as exc:
+            logger.warning(
+                "⚠️ LLM phase planner failed — falling back to heuristic: %s", exc
+            )
+
+    # Heuristic fallback — always available, no network required.
     try:
         result = plan_phases(body.dump)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    logger.info("✅ Phase plan: %d phases for plan of %d chars", len(result.phases), len(body.dump))
+    logger.info(
+        "✅ Phase plan (heuristic): %d phases for %d chars",
+        len(result.phases), len(body.dump),
+    )
     return result
 
 
