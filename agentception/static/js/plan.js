@@ -60,14 +60,11 @@ export function planForm() {
     _validateTimer: null,
 
     // ── Streaming output ───────────────────────────────────────────────────
-    thinkingText: '',   // chain-of-thought reasoning (dim display)
-    streamingText: '',  // output YAML tokens (bright display)
+    streamingText: '',  // output YAML tokens (live preview while generating)
 
-    // Internal write buffers — flushed to Alpine state once per animation frame
+    // Internal write buffer — flushed to Alpine state once per animation frame
     // so we don't trigger hundreds of reactive updates per second.
-    _thinkBuf: '',
     _streamBuf: '',
-    _thinkFlush: null,
     _streamFlush: null,
 
     // ── Loading message rotation ───────────────────────────────────────────
@@ -139,7 +136,6 @@ export function planForm() {
       if (!trimmed) return;
       this.errorMsg = '';
       this.streamingText = '';
-      this.thinkingText = '';
       this.step = 'generating';
       this.submitting = true;
       try {
@@ -178,10 +174,7 @@ export function planForm() {
             let msg;
             try { msg = JSON.parse(raw); } catch { continue; }
 
-            if (msg.t === 'thinking') {
-              this._appendThink(msg.text);
-
-            } else if (msg.t === 'chunk') {
+            if (msg.t === 'chunk') {
               this._appendStream(msg.text);
 
             } else if (msg.t === 'done') {
@@ -202,7 +195,6 @@ export function planForm() {
 
         // Flush any remaining buffered stream text before changing step,
         // so the buffers are empty when the generating div disappears.
-        this._flushThink();
         this._flushStream();
 
         // Flip to review. One nextTick lets Alpine process the x-show change.
@@ -273,8 +265,6 @@ export function planForm() {
       this.showOptions = false;
       this.errorMsg = '';
       this.streamingText = '';
-      this.thinkingText = '';
-      this._thinkBuf = '';
       this._streamBuf = '';
       this.initiative = '';
       this.phaseCount = 0;
@@ -308,23 +298,6 @@ export function planForm() {
     // ── Stream buffering helpers ───────────────────────────────────────────
     // Alpine reactive updates are expensive — batch them to one per animation
     // frame instead of firing once per token (~50-300 times/second).
-
-    _appendThink(text) {
-      this._thinkBuf += text;
-      if (!this._thinkFlush) {
-        this._thinkFlush = requestAnimationFrame(() => this._flushThink());
-      }
-    },
-
-    _flushThink() {
-      if (this._thinkBuf) {
-        this.thinkingText += this._thinkBuf;
-        this._thinkBuf = '';
-        const el = this.$refs.thinkDisplay;
-        if (el) el.scrollTop = el.scrollHeight;
-      }
-      this._thinkFlush = null;
-    },
 
     _appendStream(text) {
       this._streamBuf += text;

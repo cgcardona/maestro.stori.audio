@@ -772,14 +772,17 @@ OrgTreeNode.model_rebuild()
 class PlanIssue(BaseModel):
     """A single GitHub issue to be created within a plan phase.
 
-    ``title`` is the issue title; ``body`` is the Markdown description.
-    ``depends_on`` lists titles of other issues (within the same or earlier
-    phases) that must be merged before this one can begin.
+    ``id`` is a stable kebab-case slug (e.g. ``"auth-001"``) used as the
+    canonical dependency reference.  ``depends_on`` lists *IDs* (not titles)
+    of other issues — this avoids silent breakage when titles are edited in
+    the review editor.  ``title`` is the issue title; ``body`` is the
+    Markdown description.
     """
 
+    id: str
     title: str
     body: str
-    depends_on: list[str] = []
+    depends_on: list[str] = []  # issue IDs, not titles
 
 
 class PlanPhase(BaseModel):
@@ -838,6 +841,35 @@ class PlanSpec(BaseModel):
         return v
 
     @model_validator(mode="after")
+    def validate_issue_ids_unique(self) -> "PlanSpec":
+        """Ensure all issue IDs are unique across the entire plan."""
+        seen: set[str] = set()
+        for phase in self.phases:
+            for issue in phase.issues:
+                if issue.id in seen:
+                    raise ValueError(
+                        f"Duplicate issue id {issue.id!r} — every issue must have a unique id"
+                    )
+                seen.add(issue.id)
+        return self
+
+    @model_validator(mode="after")
+    def validate_issue_depends_on(self) -> "PlanSpec":
+        """Ensure issue depends_on references valid issue IDs defined earlier in the plan."""
+        all_ids: set[str] = {issue.id for phase in self.phases for issue in phase.issues}
+        for phase in self.phases:
+            for issue in phase.issues:
+                for dep in issue.depends_on:
+                    if dep not in all_ids:
+                        raise ValueError(
+                            f"Issue {issue.id!r} depends_on {dep!r} which is not a "
+                            f"known issue id in this plan"
+                        )
+                    if dep == issue.id:
+                        raise ValueError(f"Issue {issue.id!r} cannot depend on itself")
+        return self
+
+    @model_validator(mode="after")
     def validate_phase_dag(self) -> "PlanSpec":
         """Ensure phase depends_on references form a valid DAG.
 
@@ -874,6 +906,7 @@ class PlanSpec(BaseModel):
                     "depends_on": phase.depends_on,
                     "issues": [
                         {
+                            "id": issue.id,
                             "title": issue.title,
                             "body": issue.body,
                             "depends_on": issue.depends_on,
