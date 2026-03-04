@@ -104,6 +104,38 @@ Stori Maestro is an MCP server. Cursor, Claude Desktop, or any MCP client can li
 }
 ```
 
+**Two-server `mcp.json` setup (Maestro + AgentCeption):** If you also run [AgentCeption](https://github.com/cgcardona/agentception) locally, your `~/.cursor/mcp.json` will have two entries — one for each service. `stori-daw` points at the Maestro music composition server; `agentception` points at the AgentCeption agent orchestration server. Keep them as independent top-level keys — they do not interfere with each other:
+
+```json
+{
+  "mcpServers": {
+    "stori-daw": {
+      "command": "docker",
+      "args": [
+        "compose", "-f", "MAESTRO_REPO_ROOT/docker-compose.yml",
+        "exec", "-T",
+        "-e", "MAESTRO_MCP_URL=http://localhost:10001",
+        "-e", "MCP_TOKEN=YOUR_JWT",
+        "maestro",
+        "python", "-m", "maestro.mcp.stdio_server"
+      ],
+      "cwd": "MAESTRO_REPO_ROOT"
+    },
+    "agentception": {
+      "command": "docker",
+      "args": [
+        "compose", "-f", "AGENTCEPTION_REPO_ROOT/docker-compose.yml",
+        "exec", "-T", "agentception",
+        "python", "-m", "agentception.mcp.stdio_server"
+      ],
+      "cwd": "AGENTCEPTION_REPO_ROOT"
+    }
+  }
+}
+```
+
+Replace `MAESTRO_REPO_ROOT` / `AGENTCEPTION_REPO_ROOT` with the absolute paths to each repo. See [cgcardona/agentception](https://github.com/cgcardona/agentception) for AgentCeption's own MCP config reference.
+
 **HTTP:** `GET /api/v1/mcp/tools` (list), `POST /api/v1/mcp/tools/<name>/call` (call). Auth: Bearer token.
 
 **SSE (alternative to WebSocket):** Obtain a server-issued connection ID with `POST /api/v1/mcp/connection` (Bearer). Then connect to `GET /api/v1/mcp/stream/{connection_id}` for the event stream and post tool results to `POST /api/v1/mcp/response/{connection_id}`. Connection IDs expire after 5 minutes.
