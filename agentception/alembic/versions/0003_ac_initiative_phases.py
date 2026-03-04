@@ -5,12 +5,19 @@ at plan-creation time.  Each row records one phase of one initiative and
 which other phases it must wait for before work can begin.
 
 The Build board reads this table to compute the ``locked`` flag for each
-phase swim lane.  When no rows exist for an initiative (e.g. issues were
+phase swim lane.  When no rows exists for an initiative (e.g. issues were
 created before this feature shipped), every phase is shown as unlocked.
 
 Revision ID: ac0003
 Revises: ac0002
 Create Date: 2026-03-04
+
+DEPRECATED: This table is owned by cgcardona/agentception.
+Once AgentCeption runs on its own Postgres instance (issue #965), run
+the DROP TABLE cleanup documented in docs/migration.md (issue #966) and
+remove this migration file from the Maestro repo. Data migration
+decision: DISCARD — ac_initiative_phases data is re-created automatically
+on the next Phase 1B planning run. See docs/migration.md for rationale.
 """
 from __future__ import annotations
 

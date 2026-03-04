@@ -7,6 +7,12 @@ When AgentCeption is extracted to its own repo, this becomes its migration 0001.
 Revision ID: ac0001
 Revises:
 Create Date: 2026-03-02
+
+DEPRECATED: These tables are owned by cgcardona/agentception.
+Once AgentCeption runs on its own Postgres instance (issue #965), run
+the DROP TABLE cleanup documented in docs/migration.md (issue #966) and
+remove these migration files from the Maestro repo. Data migration
+decision: DISCARD — see docs/migration.md for rationale.
 """
 from __future__ import annotations
 
