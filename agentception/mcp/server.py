@@ -24,6 +24,7 @@ import logging
 from typing import cast
 
 from agentception.mcp.build_tools import (
+    build_get_pending_launches,
     build_report_blocker,
     build_report_decision,
     build_report_done,
@@ -137,7 +138,22 @@ TOOLS: list[ACToolDef] = [
             "additionalProperties": False,
         },
     ),
-    # ── Build tools — agents call these to report lifecycle events ──────────
+    # ── Build tools — Dispatcher reads queue; agents report lifecycle events ─
+    ACToolDef(
+        name="build_get_pending_launches",
+        description=(
+            "Return all issues queued for launch from the AgentCeption UI. "
+            "Call this once to discover your work. Each item has run_id, issue_number, "
+            "role, host_worktree_path, and batch_id. The role tells you what kind of "
+            "agent to spawn — a leaf worker implements one issue directly; a manager "
+            "(VP, CTO) reads its role file and spawns its own children via the Task tool."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    ),
     ACToolDef(
         name="build_report_step",
         description=(
@@ -343,6 +359,7 @@ def call_tool(name: str, arguments: dict[str, object]) -> ACToolResult:
     if name in (
         "plan_get_labels",
         "plan_spawn_coordinator",
+        "build_get_pending_launches",
         "build_report_step",
         "build_report_blocker",
         "build_report_decision",
@@ -381,6 +398,13 @@ async def call_tool_async(
     Returns:
         An :class:`~agentception.mcp.types.ACToolResult`.  Never raises.
     """
+    if name == "build_get_pending_launches":
+        result = await build_get_pending_launches()
+        return ACToolResult(
+            content=[ACToolContent(type="text", text=_tool_result_to_text(result))],
+            isError=False,
+        )
+
     if name == "build_report_step":
         issue_num = arguments.get("issue_number")
         step = arguments.get("step_name")

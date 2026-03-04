@@ -1,14 +1,16 @@
 """Build phase API routes.
 
-These endpoints serve two audiences:
+Three audiences:
 
-1. **The Build UI** — ``POST /api/build/dispatch`` creates a worktree and
-   ``.agent-task`` file so a human can point Cursor at a specific GitHub issue.
+1. **The Build UI** — ``POST /api/build/dispatch`` creates a worktree,
+   ``.agent-task`` file, and a ``pending_launch`` DB record.
 
-2. **Running agents** — the four ``POST /api/build/report/*`` endpoints let
-   agents push structured lifecycle events back to AgentCeption from inside
-   their Cursor session.  Agents find the URL via ``AC_URL`` in their
-   ``.agent-task`` file.
+2. **The AgentCeption Coordinator** — ``GET /api/build/pending-launches``
+   exposes the launch queue; ``POST /api/build/acknowledge/{run_id}``
+   atomically claims a run before the coordinator spawns its Task worker.
+
+3. **Running agents** — ``POST /api/build/report/*`` lets agents push
+   structured lifecycle events back to AgentCeption.
 """
 from __future__ import annotations
 
@@ -23,7 +25,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from agentception.config import settings
-from agentception.db.persist import persist_agent_event
+from agentception.db.persist import acknowledge_agent_run, persist_agent_event, persist_agent_run_dispatch
+from agentception.db.queries import get_pending_launches
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +55,11 @@ class DispatchResponse(BaseModel):
 
     run_id: str
     worktree: str
+    host_worktree: str
     branch: str
     agent_task_path: str
     batch_id: str
+    status: str = "pending_launch"
 
 
 def _make_batch_id(issue_number: int) -> str:
@@ -66,25 +71,28 @@ def _make_batch_id(issue_number: int) -> str:
 
 @router.post("/dispatch", response_model=DispatchResponse)
 async def dispatch_agent(req: DispatchRequest) -> DispatchResponse:
-    """Create a git worktree and ``.agent-task`` file for a single GitHub issue.
+    """Create a worktree, ``.agent-task``, and a ``pending_launch`` DB record.
 
-    The worktree is created under ``settings.worktrees_dir`` (default
-    ``/tmp/worktrees``).  The ``.agent-task`` file embeds everything a Cursor
-    agent needs: issue number, role, repo, and the AgentCeption callback URL
-    so the agent can call ``POST /api/build/report/*`` to push events.
+    The worktree is the isolated git checkout the agent will work in.
+    The ``.agent-task`` file is the agent's full briefing — role, scope,
+    repo, callbacks.  The ``pending_launch`` DB record is what the
+    AgentCeption Dispatcher reads via ``build_get_pending_launches`` to know
+    what to spawn next.
 
-    Returns the worktree path, branch, and agent-task location so the UI can
-    direct the user to open the worktree in Cursor.
+    Agents are NOT launched here.  The Dispatcher (a Cursor prompt the user
+    pastes once per wave) polls the pending queue and spawns the right role —
+    which may be a leaf worker, a VP, or a CTO depending on what was selected.
 
     Raises:
-        HTTPException 409: When a worktree for this issue already exists.
-        HTTPException 500: When ``git worktree add`` fails.
+        HTTPException 409: Worktree already exists.
+        HTTPException 500: git worktree add or .agent-task write failed.
     """
     run_id = f"issue-{req.issue_number}"
     slug = f"issue-{req.issue_number}"
     branch = f"feat/issue-{req.issue_number}"
     batch_id = _make_batch_id(req.issue_number)
     worktree_path = str(Path(settings.worktrees_dir) / slug)
+    host_worktree_path = str(Path(settings.host_worktrees_dir) / slug)
 
     if Path(worktree_path).exists():
         raise HTTPException(
@@ -102,37 +110,37 @@ async def dispatch_agent(req: DispatchRequest) -> DispatchResponse:
     if proc.returncode != 0:
         err = stderr.decode().strip()
         logger.error("❌ dispatch: git worktree add failed — %s", err)
-        raise HTTPException(
-            status_code=500,
-            detail=f"git worktree add failed: {err}",
-        )
+        raise HTTPException(status_code=500, detail=f"git worktree add failed: {err}")
 
     logger.info("✅ dispatch: worktree created at %s", worktree_path)
 
     ac_url = getattr(settings, "ac_url", "http://localhost:7777")
+    role_file = str(Path(settings.repo_dir) / ".cursor" / "roles" / f"{req.role}.md")
     agent_task = (
+        f"RUN_ID={run_id}\n"
         f"ISSUE_NUMBER={req.issue_number}\n"
         f"ISSUE_TITLE={req.issue_title}\n"
         f"ROLE={req.role}\n"
+        f"ROLE_FILE={role_file}\n"
         f"GH_REPO={req.repo}\n"
         f"BRANCH={branch}\n"
-        f"WORKTREE={worktree_path}\n"
+        f"WORKTREE={host_worktree_path}\n"
         f"BATCH_ID={batch_id}\n"
-        f"SPAWN_MODE=manual\n"
+        f"SPAWN_MODE=dispatcher\n"
         f"AC_URL={ac_url}\n"
         f"\n"
-        f"# Agent instructions\n"
-        f"# ─────────────────\n"
-        f"# 1. Read the issue: gh issue view {req.issue_number} --repo {req.repo}\n"
-        f"# 2. Implement the changes described in the issue.\n"
-        f"# 3. Report progress via HTTP callbacks:\n"
+        f"# How this works\n"
+        f"# ──────────────\n"
+        f"# 1. Read your role file at ROLE_FILE to understand your scope and children.\n"
+        f"# 2. If you are a leaf worker: read the issue, implement, open PR.\n"
+        f"#    If you are a manager: survey GitHub and spawn child agents via Task tool.\n"
+        f"# 3. Report progress via MCP tools (preferred) or HTTP:\n"
         f"#      curl -s -X POST {ac_url}/api/build/report/step"
         f' -H "Content-Type: application/json"'
         f" -d '{{\"issue_number\":{req.issue_number},\"step_name\":\"<step>\",\"agent_run_id\":\"{run_id}\"}}'\n"
         f"#      curl -s -X POST {ac_url}/api/build/report/done"
         f' -H "Content-Type: application/json"'
         f" -d '{{\"issue_number\":{req.issue_number},\"pr_url\":\"<url>\",\"agent_run_id\":\"{run_id}\"}}'\n"
-        f"# 4. Open a PR when done.\n"
     )
 
     agent_task_path = str(Path(worktree_path) / ".agent-task")
@@ -150,13 +158,62 @@ async def dispatch_agent(req: DispatchRequest) -> DispatchResponse:
 
     logger.info("✅ dispatch: .agent-task written to %s", agent_task_path)
 
+    # Write pending_launch record — this is what the Dispatcher reads.
+    await persist_agent_run_dispatch(
+        run_id=run_id,
+        issue_number=req.issue_number,
+        role=req.role,
+        branch=branch,
+        worktree_path=worktree_path,
+        batch_id=batch_id,
+        host_worktree_path=host_worktree_path,
+    )
+
     return DispatchResponse(
         run_id=run_id,
         worktree=worktree_path,
+        host_worktree=host_worktree_path,
         branch=branch,
         agent_task_path=agent_task_path,
         batch_id=batch_id,
+        status="pending_launch",
     )
+
+
+# ---------------------------------------------------------------------------
+# Pending launches — Dispatcher reads this to know what to spawn
+# ---------------------------------------------------------------------------
+
+
+@router.get("/pending-launches")
+async def list_pending_launches() -> dict[str, object]:
+    """Return all runs waiting to be claimed by the Dispatcher.
+
+    The AgentCeption Dispatcher calls this once at startup to discover what
+    the UI has queued.  Each item includes the run_id, role, issue number,
+    and host-side worktree path so the Dispatcher can spawn the right agent
+    at the right level of the tree (leaf worker, VP, or CTO).
+    """
+    launches = await get_pending_launches()
+    return {"pending": launches, "count": len(launches)}
+
+
+@router.post("/acknowledge/{run_id}")
+async def acknowledge_launch(run_id: str) -> dict[str, object]:
+    """Atomically claim a pending run before spawning its Task agent.
+
+    The Dispatcher calls this immediately before it spawns the Task so the
+    run cannot be double-claimed if two Dispatchers run concurrently.
+    Transitions the run from ``pending_launch`` → ``implementing``.
+
+    Returns ``{"ok": true}`` on success or ``{"ok": false, "reason": "..."}``
+    when the run was not found or already claimed (idempotency guard).
+    """
+    ok = await acknowledge_agent_run(run_id)
+    if not ok:
+        return {"ok": False, "reason": f"Run {run_id!r} not found or not in pending_launch state"}
+    logger.info("✅ acknowledge_launch: %s claimed", run_id)
+    return {"ok": True, "run_id": run_id}
 
 
 # ---------------------------------------------------------------------------

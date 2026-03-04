@@ -810,6 +810,54 @@ async def get_runs_for_issue_numbers(
         return {}
 
 
+async def get_pending_launches() -> list[dict[str, Any]]:
+    """Return all agent runs with ``status='pending_launch'``, oldest first.
+
+    Each dict contains everything the coordinator needs to claim the run and
+    spawn a worker Task: run_id, issue_number, role, branch, worktree paths,
+    batch_id, and the AC callback URL hint.
+
+    Falls back to ``[]`` on DB error.
+    """
+    import json as _json
+
+    try:
+        async with get_session() as session:
+            result = await session.execute(
+                select(ACAgentRun)
+                .where(ACAgentRun.status == "pending_launch")
+                .order_by(ACAgentRun.spawned_at.asc())
+            )
+            rows = result.scalars().all()
+
+        launches: list[dict[str, Any]] = []
+        for row in rows:
+            # host_worktree is stashed in spawn_mode as JSON by persist_agent_run_dispatch
+            host_worktree: str | None = None
+            if row.spawn_mode:
+                try:
+                    meta = _json.loads(row.spawn_mode)
+                    host_worktree = meta.get("host_worktree")
+                except (ValueError, AttributeError):
+                    pass
+            launches.append(
+                {
+                    "run_id": row.id,
+                    "issue_number": row.issue_number,
+                    "role": row.role,
+                    "branch": row.branch,
+                    "worktree_path": row.worktree_path,
+                    "host_worktree_path": host_worktree,
+                    "batch_id": row.batch_id,
+                    "spawned_at": row.spawned_at.isoformat(),
+                }
+            )
+        return launches
+    except Exception as exc:
+        logger.warning("⚠️  get_pending_launches DB query failed (non-fatal): %s", exc)
+        return []
+
+
 async def get_agent_events_tail(
     run_id: str,
     after_id: int = 0,
